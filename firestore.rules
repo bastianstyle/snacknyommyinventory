@@ -1,0 +1,93 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Helper Functions ---
+    // Fungsi untuk memeriksa apakah pengguna sudah login.
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Fungsi untuk mendapatkan data pengguna dari koleksi 'users'.
+    function getUserData() {
+      // Baca dokumen pengguna yang sedang login. Aturan di bawah harus mengizinkan ini.
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Fungsi untuk memeriksa apakah pengguna memiliki peran tertentu.
+    function hasRole(role) {
+      // Pastikan pengguna diautentikasi dan dokumen pengguna ada sebelum mencoba mengakses 'role'
+      return isAuthenticated() && getUserData() != null && getUserData().role == role;
+    }
+
+    // Fungsi untuk memeriksa apakah pengguna adalah Admin.
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    // Fungsi untuk memeriksa apakah pengguna adalah Manajer.
+    function isManager() {
+      return hasRole('manager');
+    }
+    
+    // Fungsi untuk memeriksa apakah manajer ditugaskan ke cabang tertentu.
+    function isManagerOfBranch(branchId) {
+      return isManager() && getUserData().branchId == branchId;
+    }
+
+    // --- Collection Rules ---
+
+    // Aturan untuk Koleksi Pengguna (Users)
+    match /users/{userId} {
+      // Izinkan pengguna yang diautentikasi untuk membaca dokumen pengguna mereka sendiri.
+      // Ini penting agar getUserData() dapat berfungsi.
+      allow get: if request.auth.uid == userId;
+      
+      // Izinkan admin untuk membaca (list) semua dokumen pengguna.
+      allow list: if isAdmin();
+      
+      // Izinkan admin untuk membuat/mengubah/menghapus dokumen pengguna apa pun.
+      // Pengguna tidak dapat membuat pengguna baru sendiri melalui klien.
+      allow create, update, delete: if isAdmin();
+    }
+
+    // 1. Aturan untuk Manajemen Cabang (Branches)
+    // Hanya admin yang bisa membuat, mengubah, atau menghapus cabang.
+    // Semua pengguna yang login bisa melihat daftar cabang.
+    match /branches/{branchId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // 2. Aturan untuk Manajemen Item Master (Items)
+    // Hanya admin yang bisa membuat, mengubah, atau menghapus item master.
+    // Semua pengguna yang login bisa melihat daftar item.
+    match /items/{itemId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // 3. Aturan untuk Manajemen Inventaris (Inventory)
+    // Admin bisa mengelola semua inventaris.
+    // Manajer hanya bisa mengelola inventaris di cabang mereka sendiri.
+    // Pengguna yang diautentikasi bisa membaca inventaris di cabang mereka.
+    match /inventory/{inventoryId} {
+      allow read: if isAdmin() || (isAuthenticated() && getUserData().branchId == resource.data.branchId);
+      allow create, update: if isAdmin() || isManagerOfBranch(request.resource.data.branchId);
+      allow delete: if isAdmin();
+    }
+
+    // 4. Aturan untuk Transfer Inventaris (Transfers)
+    // Admin bisa mengelola semua transfer.
+    // Manajer bisa membuat transfer DARI cabang mereka.
+    // Manajer bisa memperbarui (misal: menyetujui) transfer KE cabang mereka.
+    // Manajer bisa membaca transfer yang melibatkan cabang mereka (baik dari atau ke).
+    match /transfers/{transferId} {
+      allow read: if isAdmin() || (isManager() && (isManagerOfBranch(resource.data.fromBranchId) || isManagerOfBranch(resource.data.toBranchId)));
+      allow create: if isAdmin() || isManagerOfBranch(request.resource.data.fromBranchId);
+      allow update: if isAdmin() || isManagerOfBranch(request.resource.data.toBranchId); // Manajer tujuan yang menyetujui
+      allow delete: if isAdmin();
+    }
+  }
+}
