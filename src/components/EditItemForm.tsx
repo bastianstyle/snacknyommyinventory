@@ -35,31 +35,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Item } from "@/pages/Items";
+import { categories } from "@/lib/itemCategories";
 
 const formSchema = z.object({
   name: z.string().min(2, {
-    message: "Item name must be at least 2 characters.",
+    message: "Nama item minimal 2 karakter.",
   }),
   sku: z.string().min(1, {
-    message: "SKU is required.",
+    message: "SKU wajib diisi.",
   }),
   category: z.string({
-    required_error: "Please select a category.",
+    required_error: "Pilih kategori terlebih dahulu.",
   }),
   unit: z.string().min(1, {
-    message: "Unit is required.",
+    message: "Satuan wajib diisi.",
   }),
   description: z.string().optional(),
 });
-
-const categories = [
-  "Network Devices",
-  "Cabling & Connectors",
-  "Customer Premise Equipment (CPE)",
-  "Tools & Equipment",
-  "Accessories",
-  "Other",
-];
 
 interface EditItemFormProps {
   isOpen: boolean;
@@ -93,15 +85,15 @@ const EditItemForm = ({ isOpen, onClose, item }: EditItemFormProps) => {
       const itemRef = doc(db, "items", item.id);
       await updateDoc(itemRef, values);
       toast({
-        title: "Success",
-        description: "Item updated successfully.",
+        title: "Berhasil",
+        description: "Item berhasil diperbarui.",
       });
       onClose();
     } catch (error) {
       console.error("Error updating item: ", error);
       toast({
-        title: "Error",
-        description: "Failed to update item. Please try again.",
+        title: "Gagal",
+        description: "Gagal memperbarui item. Silakan coba lagi.",
         variant: "destructive",
       });
     } finally {
@@ -113,11 +105,11 @@ const EditItemForm = ({ isOpen, onClose, item }: EditItemFormProps) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px] bg-black/20 backdrop-blur-lg border border-white/10 text-white">
+      <DialogContent className="sm:max-w-[425px] text-black">
         <DialogHeader>
-          <DialogTitle className="text-white">Edit Item</DialogTitle>
-          <DialogDescription className="text-slate-300">
-            Update the details for this inventory item.
+          <DialogTitle className="text-black">Edit Item</DialogTitle>
+          <DialogDescription className="text-black">
+            Perbarui detail produk ini di katalog inventaris.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -127,9 +119,9 @@ const EditItemForm = ({ isOpen, onClose, item }: EditItemFormProps) => {
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-slate-200">Item Name</FormLabel>
+                  <FormLabel className="text-black">Nama Item</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Fiber Optic Router" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                    <Input placeholder="Contoh: Keripik Singkong Pedas" {...field} className="text-black placeholder:text-black" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -141,9 +133,9 @@ const EditItemForm = ({ isOpen, onClose, item }: EditItemFormProps) => {
               name="sku"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-slate-200">SKU</FormLabel>
+                  <FormLabel className="text-black">SKU</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., FIB-123" {...field} disabled className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                    <Input placeholder="Contoh: KRP-001" {...field} disabled className="text-black placeholder:text-black disabled:text-black" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -155,16 +147,16 @@ const EditItemForm = ({ isOpen, onClose, item }: EditItemFormProps) => {
               name="category"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-slate-200">Category</FormLabel>
+                  <FormLabel className="text-black">Kategori</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
-                      <SelectTrigger className="bg-black/30 border-white/20 text-white">
-                        <SelectValue placeholder="Select a category" />
+                      <SelectTrigger className="text-black">
+                        <SelectValue placeholder="Pilih kategori" className="text-black" />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent className="bg-black border-white/20 text-white">
+                    <SelectContent>
                       {categories.map((category) => (
-                        <SelectItem key={category} value={category} className="hover:bg-white/10 focus:bg-white/10">
+                        <SelectItem key={category} value={category} className="text-black">
                           {category}
                         </SelectItem>
                       ))}
@@ -180,9 +172,9 @@ const EditItemForm = ({ isOpen, onClose, item }: EditItemFormProps) => {
               name="unit"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-slate-200">Unit</FormLabel>
+                  <FormLabel className="text-black">Satuan</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Pcs" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                    <Input placeholder="Contoh: Pcs, Bungkus, Dus" {...field} className="text-black placeholder:text-black" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -193,20 +185,20 @@ const EditItemForm = ({ isOpen, onClose, item }: EditItemFormProps) => {
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-slate-200">Description (Optional)</FormLabel>
+                  <FormLabel className="text-black">Deskripsi (Opsional)</FormLabel>
                   <FormControl>
-                    <Textarea placeholder="e.g., High-performance router for fiber optic connections" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                    <Textarea placeholder="Contoh: Keripik singkong pedas level 3, cocok untuk camilan sehari-hari" {...field} className="text-black placeholder:text-black" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting} className="bg-transparent border-white/20 text-white hover:bg-white/10">
-                Cancel
+              <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting} className="text-black">
+                Batal
               </Button>
               <Button type="submit" disabled={isSubmitting} className="bg-indigo-600 hover:bg-indigo-500 text-white">
-                {isSubmitting ? "Updating..." : "Save Changes"}
+                {isSubmitting ? "Menyimpan..." : "Simpan Perubahan"}
               </Button>
             </DialogFooter>
           </form>

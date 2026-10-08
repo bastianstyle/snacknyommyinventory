@@ -34,51 +34,9 @@ import {
   Tooltip, 
   Legend, 
   ResponsiveContainer,
-  Cell
 } from 'recharts';
 import { IncomingItem } from "./IncomingItems";
 import { OutgoingItemDoc } from "./OutgoingItems";
-import { addDoc } from "firebase/firestore";
-
-// --- SEED DATA FUNCTION (TEMPORARY) ---
-const seedInitialData = async () => {
-  try {
-    // 1. Seed Items
-    const itemsRef = collection(db, "items");
-    const itemsSnap = await getDocs(query(itemsRef, limit(1)));
-    if (itemsSnap.empty) {
-      const sampleItems = [
-        { name: "Basreng Pedas Daun Jeruk", sku: "BSG-001", category: "Keripik", unit: "Pcs" },
-        { name: "Makaroni Bantet", sku: "MKR-001", category: "Makaroni", unit: "Pcs" },
-        { name: "Kripik Kaca Extra Pedas", sku: "KPK-001", category: "Keripik", unit: "Pcs" },
-        { name: "Soes Coklat Lumer", sku: "SOE-001", category: "Kue Kering", unit: "Pcs" },
-        { name: "Pangsit Goreng Original", sku: "PST-001", category: "Snack Gurih", unit: "Pcs" }
-      ];
-      for (const item of sampleItems) {
-        await addDoc(itemsRef, item);
-      }
-      console.log("Sample items seeded!");
-    }
-
-    // 2. Seed Branches
-    const branchesRef = collection(db, "branches");
-    const branchesSnap = await getDocs(query(branchesRef, limit(1)));
-    if (branchesSnap.empty) {
-      const sampleBranches = [
-        { name: "Bandung", location: "Jawa Barat", contact: "08123456789" },
-        { name: "Pontianak", location: "Kalimantan Barat", contact: "08987654321" }
-      ];
-      for (const branch of sampleBranches) {
-        await addDoc(branchesRef, branch);
-      }
-      console.log("Sample branches seeded!");
-      window.location.reload(); // Reload to refresh DataContext
-    }
-  } catch (e) {
-    console.error("Seeding failed:", e);
-  }
-};
-// ---------------------------------------
 
 interface DashboardStats {
   totalItems: number;
@@ -93,6 +51,7 @@ interface RecentActivity {
   date: Date;
   itemName: string;
   branchName: string;
+  branchId: string;
   quantity: number;
 }
 
@@ -103,14 +62,12 @@ interface RecentInventoryItem {
   totalQuantity: number;
 }
 
-interface ChartData {
-  name: string;
-  Bandung: number;
-  Pontianak: number;
+interface LowStockItem extends RecentInventoryItem {
+  sku: string;
 }
 
 const Index = () => {
-  const { user } = useAuth();
+  const { user, role, userBranchId } = useAuth();
   const { branches, branchesMap, itemsMap, loading: dataLoading } = useData();
   const [stats, setStats] = useState<DashboardStats>({
     totalItems: 0,
@@ -123,27 +80,51 @@ const Index = () => {
   const [allInventory, setAllInventory] = useState<InventoryDoc[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const dashboardTitle = useMemo(() => {
+    if (role === 'admin') {
+      return "Dasbor admin - Toko Snack Nyommy";
+    }
+    if (role === 'manager' && userBranchId) {
+      const branchName = branchesMap.get(userBranchId) || "";
+      return `Dasbor Manager - Toko Snack Nyommy ${branchName}`;
+    }
+    return "Dasbor Manager - Toko Snack Nyommy";
+  }, [role, userBranchId, branchesMap]);
+
   // Identify Branch IDs for Bandung and Pontianak
   const bandungBranch = useMemo(() => branches.find(b => b.name.toLowerCase().includes('bandung')), [branches]);
   const pontianakBranch = useMemo(() => branches.find(b => b.name.toLowerCase().includes('pontianak')), [branches]);
 
   useEffect(() => {
-    document.title = "Snack Nyommy - Inventory System - Dasbor Owner";
-    seedInitialData();
+    document.title = `Snack Nyommy - Inventory System - ${dashboardTitle}`;
     if (dataLoading) return;
 
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
-        // Stats Queries
-        const itemsCountQuery = getCountFromServer(collection(db, "items"));
-        const incomingCountQuery = getCountFromServer(collection(db, "incoming_items"));
-        const outgoingCountQuery = getCountFromServer(collection(db, "outgoing_items"));
+        const isBranchScoped = role === 'manager' && !!userBranchId;
 
-        // Data for cards and charts
-        const incomingQuery = getDocs(query(collection(db, "incoming_items"), orderBy("createdAt", "desc"), limit(5)));
-        const outgoingQuery = getDocs(query(collection(db, "outgoing_items"), orderBy("createdAt", "desc"), limit(5)));
-        const inventoryQuery = getDocs(collection(db, "inventory"));
+        // Total Produk (katalog varian) selalu global - katalog item bersifat sama di semua cabang.
+        const itemsCountQuery = getCountFromServer(collection(db, "items"));
+
+        // Barang Masuk/Keluar: Admin melihat total seluruh cabang, Manager hanya cabangnya sendiri.
+        const incomingCountQuery = isBranchScoped
+          ? getCountFromServer(query(collection(db, "incoming_items"), where("branchId", "==", userBranchId)))
+          : getCountFromServer(collection(db, "incoming_items"));
+        const outgoingCountQuery = isBranchScoped
+          ? getCountFromServer(query(collection(db, "outgoing_items"), where("branchId", "==", userBranchId)))
+          : getCountFromServer(collection(db, "outgoing_items"));
+
+        const incomingQuery = isBranchScoped
+          ? query(collection(db, "incoming_items"), where("branchId", "==", userBranchId), orderBy("createdAt", "desc"), limit(50))
+          : query(collection(db, "incoming_items"), orderBy("createdAt", "desc"), limit(50));
+        const outgoingQuery = isBranchScoped
+          ? query(collection(db, "outgoing_items"), where("branchId", "==", userBranchId), orderBy("createdAt", "desc"), limit(50))
+          : query(collection(db, "outgoing_items"), orderBy("createdAt", "desc"), limit(50));
+
+        // Inventaris tetap diambil global (dibutuhkan untuk grafik perbandingan Admin serta
+        // fitur "Cek Cabang Lain"); Manager tetap hanya melihat bagian cabangnya lewat filter di bawah.
+        const inventoryQuery = query(collection(db, "inventory"));
 
         const [
           itemsCountSnap,
@@ -156,100 +137,130 @@ const Index = () => {
           itemsCountQuery,
           incomingCountQuery,
           outgoingCountQuery,
-          incomingQuery,
-          outgoingQuery,
-          inventoryQuery,
+          getDocs(incomingQuery),
+          getDocs(outgoingQuery),
+          getDocs(inventoryQuery),
         ]);
 
         // Store all inventory for chart processing
         const inventoryData = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as InventoryDoc[];
         setAllInventory(inventoryData);
 
-        // Calculate low stock manually since it's nested in entries
-        const lowStockCount = inventoryData.filter(inv => {
+        // Calculate low stock manually
+        const lowStockList: LowStockItem[] = [];
+        inventoryData.forEach(inv => {
+          if (role === 'manager' && userBranchId && inv.branchId !== userBranchId) return;
+          
           const totalQty = (inv.entries || []).reduce((sum, e) => sum + e.quantity, 0);
-          return totalQty < 10;
-        }).length;
+          if (totalQty < 100) {
+            lowStockList.push({
+              id: inv.id,
+              itemName: itemsMap.get(inv.itemId)?.name || "Item Tidak Dikenal",
+              branchName: branchesMap.get(inv.branchId) || "Cabang Tidak Dikenal",
+              totalQuantity: totalQty,
+              sku: itemsMap.get(inv.itemId)?.sku || "N/A"
+            });
+          }
+        });
 
         setStats({
           totalItems: itemsCountSnap.data().count,
-          lowStockAlerts: lowStockCount,
+          lowStockAlerts: lowStockList.length,
           totalIncoming: incomingCountSnap.data().count,
           totalOutgoing: outgoingCountSnap.data().count,
         });
 
         // Process Recent Activities
-        const incomingActivities: RecentActivity[] = incomingSnapshot.docs.map(doc => {
-          const data = doc.data() as IncomingItem;
-          return {
-            id: doc.id,
-            type: 'in',
-            date: data.createdAt.toDate(),
-            itemName: itemsMap.get(data.itemId)?.name || "Item Tidak Dikenal",
-            branchName: branchesMap.get(data.branchId) || "Tidak Dikenal",
-            quantity: data.quantity,
-          };
-        });
+        const processActivities = (snapshot: any, type: 'in' | 'out') => 
+          snapshot.docs.map((doc: any) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              type,
+              date: data.createdAt.toDate(),
+              itemName: itemsMap.get(data.itemId)?.name || "Item Tidak Dikenal",
+              branchName: branchesMap.get(data.branchId) || "Tidak Dikenal",
+              branchId: data.branchId,
+              quantity: data.quantity,
+            };
+          });
 
-        const outgoingActivities: RecentActivity[] = outgoingSnapshot.docs.map(doc => {
-          const data = doc.data() as OutgoingItemDoc;
-          return {
-            id: doc.id,
-            type: 'out',
-            date: data.createdAt.toDate(),
-            itemName: itemsMap.get(data.itemId)?.name || "Item Tidak Dikenal",
-            branchName: branchesMap.get(data.branchId) || "Tidak Dikenal",
-            quantity: data.quantity,
-          };
-        });
-
-        const combinedActivities = [...incomingActivities, ...outgoingActivities]
+        const combinedActivities = [...processActivities(incomingSnapshot, 'in'), ...processActivities(outgoingSnapshot, 'out')]
+          .filter(act => role === 'admin' || (role === 'manager' && act.branchId === userBranchId))
           .sort((a, b) => b.date.getTime() - a.date.getTime())
           .slice(0, 5);
         
         setRecentActivities(combinedActivities);
 
         // Process Recent Inventory
-        const processedInventory = inventoryData.slice(0, 5).map(data => {
-          const totalQuantity = (data.entries || []).reduce((sum, entry) => sum + entry.quantity, 0);
-          return {
-            id: data.id,
-            itemName: itemsMap.get(data.itemId)?.name || "Item Tidak Dikenal",
-            branchName: branchesMap.get(data.branchId) || "Cabang Tidak Dikenal",
-            totalQuantity: totalQuantity,
-          };
-        });
+        const processedInventory = inventoryData
+          .filter(data => role === 'admin' || (role === 'manager' && data.branchId === userBranchId))
+          .slice(0, 5)
+          .map(data => {
+            const totalQuantity = (data.entries || []).reduce((sum, entry) => sum + entry.quantity, 0);
+            return {
+              id: data.id,
+              itemName: itemsMap.get(data.itemId)?.name || "Item Tidak Dikenal",
+              branchName: branchesMap.get(data.branchId) || "Cabang Tidak Dikenal",
+              totalQuantity: totalQuantity,
+            };
+          });
         setRecentInventory(processedInventory);
 
-      } catch (error) {
-        console.error("Error fetching dashboard data:", error);
-        toast.error("Tidak dapat memuat data dasbor.");
+      } catch (error: any) {
+        console.error("CRITICAL: Error fetching dashboard data:", error);
+        if (error.message && error.message.includes("index")) {
+          toast.error("Database membutuhkan index baru. Silakan cek konsol browser untuk link aktivasi.");
+        } else {
+          toast.error(`Gagal memuat data: ${error.message || "Unknown error"}`);
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchDashboardData();
-  }, [dataLoading, branchesMap, itemsMap]);
+  }, [dataLoading, branchesMap, itemsMap, role, userBranchId, dashboardTitle]);
 
-  // Process data for Branch Comparison Chart
-  const comparisonChartData = useMemo(() => {
-    if (!bandungBranch || !pontianakBranch || allInventory.length === 0) return [];
+  // Process data for charts
+  // Manager: hanya stok cabangnya sendiri (satu seri). Admin: perbandingan Bandung vs Pontianak.
+  const chartData = useMemo(() => {
+    if (allInventory.length === 0) return [];
+
+    if (role === 'manager' && userBranchId) {
+      const itemTotals = new Map<string, number>();
+
+      allInventory
+        .filter(inv => inv.branchId === userBranchId)
+        .forEach(inv => {
+          const itemName = itemsMap.get(inv.itemId)?.name || "Tidak Diketahui";
+          const totalQty = (inv.entries || []).reduce((sum, e) => sum + e.quantity, 0);
+          itemTotals.set(itemName, (itemTotals.get(itemName) || 0) + totalQty);
+        });
+
+      return Array.from(itemTotals.entries())
+        .map(([name, qty]) => ({
+          name: name.length > 15 ? name.substring(0, 12) + '...' : name,
+          stok: qty,
+        }))
+        .filter(d => d.stok > 0)
+        .sort((a, b) => b.stok - a.stok)
+        .slice(0, 5);
+    }
 
     const itemTotals = new Map<string, { bandung: number, pontianak: number }>();
 
     allInventory.forEach(inv => {
-      const itemName = itemsMap.get(inv.itemId)?.name || "Unknown";
+      const itemName = itemsMap.get(inv.itemId)?.name || "Tidak Diketahui";
       const totalQty = (inv.entries || []).reduce((sum, e) => sum + e.quantity, 0);
-      
+
       const current = itemTotals.get(itemName) || { bandung: 0, pontianak: 0 };
-      if (inv.branchId === bandungBranch.id) current.bandung += totalQty;
-      if (inv.branchId === pontianakBranch.id) current.pontianak += totalQty;
-      
+      if (bandungBranch && inv.branchId === bandungBranch.id) current.bandung += totalQty;
+      if (pontianakBranch && inv.branchId === pontianakBranch.id) current.pontianak += totalQty;
+
       itemTotals.set(itemName, current);
     });
 
-    // Take top 5 items for visual clarity
     return Array.from(itemTotals.entries())
       .map(([name, totals]) => ({
         name: name.length > 15 ? name.substring(0, 12) + '...' : name,
@@ -257,16 +268,17 @@ const Index = () => {
         Pontianak: totals.pontianak
       }))
       .filter(d => d.Bandung > 0 || d.Pontianak > 0)
+      .sort((a, b) => (b.Bandung + b.Pontianak) - (a.Bandung + a.Pontianak))
       .slice(0, 5);
-  }, [allInventory, bandungBranch, pontianakBranch, itemsMap]);
+  }, [allInventory, bandungBranch, pontianakBranch, itemsMap, role, userBranchId]);
 
   const renderStat = (value: number) => {
     if (loading || dataLoading) return <Skeleton className="h-8 w-12 bg-white/20" />;
     return <div className="text-2xl font-bold">{value}</div>;
   };
   
-  const GlassCard = ({ children, className }: { children: React.ReactNode, className?: string }) => (
-    <Card className={`bg-black/20 backdrop-blur-lg border border-white/10 text-white ${className}`}>
+  const GlassCard = ({ children, className, ...props }: { children: React.ReactNode, className?: string, [key: string]: any }) => (
+    <Card className={`bg-black/20 backdrop-blur-lg border border-white/10 text-white ${className}`} {...props}>
       {children}
     </Card>
   );
@@ -275,8 +287,12 @@ const Index = () => {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl md:text-3xl font-bold text-white">Dasbor Owner - Toko Snack Nyommy</h1>
-          <p className="text-slate-300">Monitoring real-time stok Bandung & Pontianak</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-white">{dashboardTitle}</h1>
+          <p className="text-slate-300">
+            {role === 'admin' 
+              ? "Monitoring real-time stok Bandung & Pontianak" 
+              : `Monitoring real-time stok ${branchesMap.get(userBranchId || "") || ""}`}
+          </p>
         </div>
         <div className="flex items-center space-x-2 bg-white/5 p-2 rounded-lg border border-white/10">
           <TrendingUp className="text-green-400 h-5 w-5" />
@@ -315,65 +331,75 @@ const Index = () => {
             <p className="text-xs text-slate-400">Total item terjual/keluar</p>
           </CardContent>
         </GlassCard>
-        <GlassCard>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-200">Stok Kritis</CardTitle>
-            <Bell className="h-4 w-4 text-red-400 animate-pulse" />
-          </CardHeader>
-          <CardContent>
-            {renderStat(stats.lowStockAlerts)}
-            <p className="text-xs text-slate-400">Perlu segera diisi ulang</p>
-          </CardContent>
+        <GlassCard asChild className="cursor-pointer hover:bg-white/5 transition-colors group">
+          <Link to="/critical-stock">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-slate-200 group-hover:text-white transition-colors">Stok Kritis</CardTitle>
+              <Bell className="h-4 w-4 text-red-400 animate-pulse" />
+            </CardHeader>
+            <CardContent>
+              {renderStat(stats.lowStockAlerts)}
+              <p className="text-xs text-slate-400 group-hover:text-slate-300 transition-colors">Perlu segera diisi ulang</p>
+            </CardContent>
+          </Link>
         </GlassCard>
       </div>
 
-      {/* Branch Comparison Visual */}
       <div className="grid gap-6 lg:grid-cols-3">
         <GlassCard className="lg:col-span-2">
           <CardHeader>
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <CardTitle>Perbandingan Stok: Bandung vs Pontianak</CardTitle>
-                <CardDescription className="text-slate-300">Visualisasi 5 snack dengan pergerakan stok tertinggi.</CardDescription>
+                <CardTitle>
+                  {role === 'manager'
+                    ? `Stok Tertinggi: ${branchesMap.get(userBranchId || "") || "Cabang Anda"}`
+                    : "Perbandingan Stok: Bandung & Pontianak"}
+                </CardTitle>
+                <CardDescription className="text-slate-300">
+                  {role === 'manager'
+                    ? "Visualisasi 5 snack dengan stok tertinggi di cabang Anda."
+                    : "Visualisasi 5 snack dengan pergerakan stok tertinggi antar cabang."}
+                </CardDescription>
               </div>
               <div className="flex space-x-2 text-xs">
-                <div className="flex items-center"><div className="w-3 h-3 bg-blue-500 rounded-sm mr-1"></div> Bandung</div>
-                <div className="flex items-center"><div className="w-3 h-3 bg-emerald-500 rounded-sm mr-1"></div> Pontianak</div>
+                {role === 'manager' ? (
+                  <div className="flex items-center"><div className="w-3 h-3 bg-blue-500 rounded-sm mr-1"></div> {branchesMap.get(userBranchId || "") || "Cabang Anda"}</div>
+                ) : (
+                  <>
+                    <div className="flex items-center"><div className="w-3 h-3 bg-blue-500 rounded-sm mr-1"></div> Bandung</div>
+                    <div className="flex items-center"><div className="w-3 h-3 bg-emerald-500 rounded-sm mr-1"></div> Pontianak</div>
+                  </>
+                )}
               </div>
             </div>
           </CardHeader>
           <CardContent className="h-[300px] w-full mt-4">
             {loading ? (
               <Skeleton className="h-full w-full bg-white/5" />
-            ) : comparisonChartData.length > 0 ? (
+            ) : chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={comparisonChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
-                  <XAxis 
-                    dataKey="name" 
-                    stroke="#94a3b8" 
-                    fontSize={12} 
-                    tickLine={false} 
-                    axisLine={false} 
-                  />
-                  <YAxis 
-                    stroke="#94a3b8" 
-                    fontSize={12} 
-                    tickLine={false} 
-                    axisLine={false} 
-                  />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
                     itemStyle={{ color: '#fff' }}
                   />
-                  <Bar dataKey="Bandung" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={25} />
-                  <Bar dataKey="Pontianak" fill="#10b981" radius={[4, 4, 0, 0]} barSize={25} />
+                  {role === 'manager' ? (
+                    <Bar dataKey="stok" name={branchesMap.get(userBranchId || "") || "Cabang Anda"} fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={25} />
+                  ) : (
+                    <>
+                      <Bar dataKey="Bandung" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={25} />
+                      <Bar dataKey="Pontianak" fill="#10b981" radius={[4, 4, 0, 0]} barSize={25} />
+                    </>
+                  )}
                 </BarChart>
               </ResponsiveContainer>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-slate-400">
                 <Building2 className="h-10 w-10 mb-2 opacity-20" />
-                <p>Data perbandingan tidak tersedia.</p>
+                <p>Data tidak tersedia.</p>
               </div>
             )}
           </CardContent>
@@ -464,19 +490,21 @@ const Index = () => {
             <CardDescription className="text-slate-300">Pemberitahuan sistem & operasional.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 text-yellow-200 text-sm">
-              <div className="flex items-center font-bold mb-1">
-                <Bell className="h-4 w-4 mr-2" />
-                Peringatan Stok Bandung
+            {stats.lowStockAlerts > 0 && (
+              <div className="p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 text-yellow-200 text-sm">
+                <div className="flex items-center font-bold mb-1">
+                  <Bell className="h-4 w-4 mr-2" />
+                  Peringatan Stok {role === 'admin' ? 'Global' : (branchesMap.get(userBranchId || "") || "Cabang")}
+                </div>
+                Terdapat {stats.lowStockAlerts} produk dengan stok di bawah 100 unit yang perlu perhatian Anda.
               </div>
-              Terdapat {stats.lowStockAlerts} produk dengan stok di bawah 10 unit di cabang Bandung.
-            </div>
+            )}
             <div className="p-3 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-200 text-sm">
               <div className="flex items-center font-bold mb-1">
                 <TrendingUp className="h-4 w-4 mr-2" />
                 Info Sistem
               </div>
-              Seluruh data tersinkronisasi otomatis menggunakan Firestore Real-time.
+              Seluruh data tersinkronisasi otomatis menggunakan Firestore Real-time untuk {role === 'admin' ? 'seluruh cabang' : 'cabang Anda'}.
             </div>
           </CardContent>
         </GlassCard>

@@ -69,25 +69,52 @@ service cloud.firestore {
     }
 
     // 3. Aturan untuk Manajemen Inventaris (Inventory)
-    // Admin bisa mengelola semua inventaris.
-    // Manajer hanya bisa mengelola inventaris di cabang mereka sendiri.
-    // Pengguna yang diautentikasi bisa membaca inventaris di cabang mereka.
+    // Semua pengguna terautentikasi bisa melihat stok di semua cabang
+    // untuk keperluan transfer antar cabang.
+    // Admin adalah pengawas, bukan pelaksana: create/update stok harian
+    // hanya boleh dilakukan oleh Manajer cabang yang bersangkutan.
     match /inventory/{inventoryId} {
-      allow read: if isAdmin() || (isAuthenticated() && getUserData().branchId == resource.data.branchId);
-      allow create, update: if isAdmin() || isManagerOfBranch(request.resource.data.branchId);
+      allow read: if isAuthenticated();
+      allow create, update: if isManagerOfBranch(request.resource.data.branchId);
       allow delete: if isAdmin();
     }
 
     // 4. Aturan untuk Transfer Inventaris (Transfers)
-    // Admin bisa mengelola semua transfer.
-    // Manajer bisa membuat transfer DARI cabang mereka.
-    // Manajer bisa memperbarui (misal: menyetujui) transfer KE cabang mereka.
-    // Manajer bisa membaca transfer yang melibatkan cabang mereka (baik dari atau ke).
+    // Manajer bisa MEMBUAT permintaan transfer UNTUK cabang mereka (toBranchId).
+    // Admin TIDAK bisa membuat transfer dan TIDAK bisa approve/reject/ship/receive -
+    // Admin murni pengawas (read-only): hanya melihat status & info kurir/pengiriman.
+    // Manajer cabang asal yang approve/reject/ship, manajer cabang tujuan yang receive.
+    // Saat receive (status -> completed), wajib sertakan proofPhotoUrl (foto bukti,
+    // disimpan sebagai data URI base64 karena tidak memakai Firebase Storage) dan
+    // dibatasi ukurannya agar tidak melebihi limit dokumen Firestore (1MB).
     match /transfers/{transferId} {
       allow read: if isAdmin() || (isManager() && (isManagerOfBranch(resource.data.fromBranchId) || isManagerOfBranch(resource.data.toBranchId)));
-      allow create: if isAdmin() || isManagerOfBranch(request.resource.data.fromBranchId);
-      allow update: if isAdmin() || isManagerOfBranch(request.resource.data.toBranchId); // Manajer tujuan yang menyetujui
+      allow create: if isManagerOfBranch(request.resource.data.toBranchId);
+      allow update: if
+        (isManagerOfBranch(resource.data.fromBranchId) && request.resource.data.status in ['approved', 'rejected', 'shipped']) ||
+        (isManagerOfBranch(resource.data.toBranchId) && request.resource.data.status == 'completed'
+          && request.resource.data.proofPhotoUrl is string
+          && request.resource.data.proofPhotoUrl.size() > 0
+          && request.resource.data.proofPhotoUrl.size() < 900000
+          && request.resource.data.receivedBy == request.auth.uid);
       allow delete: if isAdmin();
+    }
+
+    // 5. Aturan untuk Transaksi Barang Masuk (Incoming Items)
+    // Catatan transaksi harian, hanya Manajer cabang terkait yang boleh mencatat.
+    // Admin hanya bisa membaca (pengawasan/laporan), tidak input transaksi.
+    match /incoming_items/{incomingItemId} {
+      allow read: if isAdmin() || isManagerOfBranch(resource.data.branchId);
+      allow create: if isManagerOfBranch(request.resource.data.branchId);
+      allow update, delete: if isAdmin();
+    }
+
+    // 6. Aturan untuk Transaksi Barang Keluar (Outgoing Items)
+    // Sama seperti Barang Masuk: hanya Manajer cabang terkait yang boleh mencatat.
+    match /outgoing_items/{outgoingItemId} {
+      allow read: if isAdmin() || isManagerOfBranch(resource.data.branchId);
+      allow create: if isManagerOfBranch(request.resource.data.branchId);
+      allow update, delete: if isAdmin();
     }
   }
 }

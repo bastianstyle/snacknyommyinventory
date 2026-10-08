@@ -17,8 +17,8 @@ import { toast } from "@/hooks/use-toast";
 import { Branch } from "@/pages/Branches";
 
 const formSchema = z.object({
-  name: z.string().min(2, { message: "Branch name must be at least 2 characters." }),
-  location: z.string().min(2, { message: "Location must be at least 2 characters." }),
+  name: z.string().min(2, { message: "Nama cabang minimal 2 karakter." }),
+  location: z.string().min(2, { message: "Lokasi minimal 2 karakter." }),
   address: z.string().optional(),
   phone: z.string().optional(),
 });
@@ -44,15 +44,15 @@ export const EditBranchForm = ({ setDialogOpen, branch }: EditBranchFormProps) =
       const branchRef = doc(db, "branches", branch.id);
       await updateDoc(branchRef, values);
       toast({
-        title: "Success",
-        description: "Branch updated successfully.",
+        title: "Berhasil",
+        description: "Cabang berhasil diperbarui.",
       });
       setDialogOpen(false);
     } catch (error) {
       console.error("Error updating branch: ", error);
       toast({
-        title: "Error",
-        description: "Failed to update branch.",
+        title: "Gagal",
+        description: "Gagal memperbarui cabang.",
         variant: "destructive",
       });
     }
@@ -66,9 +66,9 @@ export const EditBranchForm = ({ setDialogOpen, branch }: EditBranchFormProps) =
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Branch Name</FormLabel>
+              <FormLabel className="text-black">Nama Cabang</FormLabel>
               <FormControl>
-                <Input placeholder="Main Branch" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                <Input placeholder="Contoh: Cabang Pontianak" {...field} className="text-black placeholder:text-black" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -79,9 +79,9 @@ export const EditBranchForm = ({ setDialogOpen, branch }: EditBranchFormProps) =
           name="location"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Location</FormLabel>
+              <FormLabel className="text-black">Lokasi</FormLabel>
               <FormControl>
-                <Input placeholder="New York" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                <Input placeholder="Contoh: Pontianak" {...field} className="text-black placeholder:text-black" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -92,9 +92,9 @@ export const EditBranchForm = ({ setDialogOpen, branch }: EditBranchFormProps) =
           name="address"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Address</FormLabel>
+              <FormLabel className="text-black">Alamat</FormLabel>
               <FormControl>
-                <Input placeholder="123 Main St" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                <Input placeholder="Contoh: Jl. Merdeka No. 123" {...field} className="text-black placeholder:text-black" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -105,15 +105,15 @@ export const EditBranchForm = ({ setDialogOpen, branch }: EditBranchFormProps) =
           name="phone"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Phone Number</FormLabel>
+              <FormLabel className="text-black">Nomor Telepon</FormLabel>
               <FormControl>
-                <Input placeholder="(555) 123-4567" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                <Input placeholder="Contoh: 0812-3456-7890" {...field} className="text-black placeholder:text-black" />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white">Save Changes</Button>
+        <Button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white">Simpan Perubahan</Button>
       </form>
     </Form>
   );

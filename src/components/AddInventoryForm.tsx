@@ -107,16 +107,16 @@ export const AddInventoryForm = ({ setDialogOpen, branches, items }: AddInventor
           name="branchId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Branch</FormLabel>
+              <FormLabel className="text-black">Branch</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
-                  <SelectTrigger className="bg-black/30 border-white/20 text-white">
-                    <SelectValue placeholder="Select a branch" />
+                  <SelectTrigger className="text-black">
+                    <SelectValue placeholder="Select a branch" className="text-black" />
                   </SelectTrigger>
                 </FormControl>
-                <SelectContent className="bg-black border-white/20 text-foreground">
+                <SelectContent>
                   {branches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.id} className="hover:bg-white/10 focus:bg-white/10 text-slate-50">
+                    <SelectItem key={branch.id} value={branch.id} className="text-black">
                       {branch.name}
                     </SelectItem>
                   ))}
@@ -131,16 +131,16 @@ export const AddInventoryForm = ({ setDialogOpen, branches, items }: AddInventor
           name="itemId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Item</FormLabel>
+              <FormLabel className="text-black">Item</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
-                  <SelectTrigger className="bg-black/30 border-white/20 text-white">
-                    <SelectValue placeholder="Select an item" />
+                  <SelectTrigger className="text-black">
+                    <SelectValue placeholder="Select an item" className="text-black" />
                   </SelectTrigger>
                 </FormControl>
-                <SelectContent className="bg-black border-white/20 text-foreground">
+                <SelectContent>
                   {items.map((item) => (
-                    <SelectItem key={item.id} value={item.id} className="hover:bg-white/10 focus:bg-white/10 text-slate-50">
+                    <SelectItem key={item.id} value={item.id} className="text-black">
                       {item.name} ({item.sku})
                     </SelectItem>
                   ))}
@@ -155,9 +155,9 @@ export const AddInventoryForm = ({ setDialogOpen, branches, items }: AddInventor
           name="quantity"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Initial Quantity</FormLabel>
+              <FormLabel className="text-black">Initial Quantity</FormLabel>
               <FormControl>
-                <Input type="number" placeholder="Enter initial quantity" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                <Input type="number" placeholder="Enter initial quantity" {...field} className="text-black placeholder:text-black" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -168,9 +168,9 @@ export const AddInventoryForm = ({ setDialogOpen, branches, items }: AddInventor
           name="purchasePrice"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Purchase Price (per unit)</FormLabel>
+              <FormLabel className="text-black">Purchase Price (per unit)</FormLabel>
               <FormControl>
-                <Input type="number" placeholder="Enter price per unit" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                <Input type="number" placeholder="Enter price per unit" {...field} className="text-black placeholder:text-black" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -181,9 +181,9 @@ export const AddInventoryForm = ({ setDialogOpen, branches, items }: AddInventor
           name="supplier"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Supplier</FormLabel>
+              <FormLabel className="text-black">Supplier</FormLabel>
               <FormControl>
-                <Input placeholder="Enter supplier name" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                <Input placeholder="Enter supplier name" {...field} className="text-black placeholder:text-black" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -194,16 +194,16 @@ export const AddInventoryForm = ({ setDialogOpen, branches, items }: AddInventor
           name="rackLocation"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Rack Location (Optional)</FormLabel>
+              <FormLabel className="text-black">Rack Location (Optional)</FormLabel>
               <FormControl>
-                <Input placeholder="e.g., A1, Warehouse-Shelf-3" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                <Input placeholder="e.g., A1, Warehouse-Shelf-3" {...field} className="text-black placeholder:text-black" />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
         <div className="flex justify-end space-x-2">
-          <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isSubmitting} className="bg-transparent border-white/20 text-white hover:bg-white/10">
+          <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isSubmitting} className="text-black">
             Cancel
           </Button>
           <Button type="submit" disabled={isSubmitting} className="bg-indigo-600 hover:bg-indigo-500 text-white">

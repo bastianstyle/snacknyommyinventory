@@ -77,9 +77,9 @@ export const AddStockForm = ({ inventoryItem, onClose }: AddStockFormProps) => {
           name="quantity"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Quantity to Add</FormLabel>
+              <FormLabel className="text-black">Quantity to Add</FormLabel>
               <FormControl>
-                <Input type="number" placeholder="Enter quantity" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                <Input type="number" placeholder="Enter quantity" {...field} className="text-black placeholder:text-black" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -90,9 +90,9 @@ export const AddStockForm = ({ inventoryItem, onClose }: AddStockFormProps) => {
           name="purchasePrice"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Purchase Price (per unit)</FormLabel>
+              <FormLabel className="text-black">Purchase Price (per unit)</FormLabel>
               <FormControl>
-                <Input type="number" placeholder="Enter price per unit" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                <Input type="number" placeholder="Enter price per unit" {...field} className="text-black placeholder:text-black" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -103,16 +103,16 @@ export const AddStockForm = ({ inventoryItem, onClose }: AddStockFormProps) => {
           name="supplier"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Supplier</FormLabel>
+              <FormLabel className="text-black">Supplier</FormLabel>
               <FormControl>
-                <Input placeholder="Enter supplier name" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" />
+                <Input placeholder="Enter supplier name" {...field} className="text-black placeholder:text-black" />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
         <div className="flex justify-end space-x-2">
-          <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting} className="bg-transparent border-white/20 text-white hover:bg-white/10">
+          <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting} className="text-black">
             Cancel
           </Button>
           <Button type="submit" disabled={isSubmitting} className="bg-indigo-600 hover:bg-indigo-500 text-white">

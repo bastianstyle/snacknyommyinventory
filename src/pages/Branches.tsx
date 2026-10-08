@@ -41,7 +41,7 @@ const Branches = () => {
   const { role } = useAuth();
 
   useEffect(() => {
-    document.title = "Snack Nyommy - Inventory System - Branches";
+    document.title = "Snack Nyommy - Sistem Inventaris - Cabang";
     const q = query(collection(db, "branches"), orderBy("name"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const branchesData = snapshot.docs.map((doc) => ({
@@ -63,34 +63,36 @@ const Branches = () => {
     try {
       await deleteDoc(doc(db, "branches", branchId));
       toast({
-        title: "Success",
-        description: "Branch deleted successfully.",
+        title: "Berhasil",
+        description: "Cabang berhasil dihapus.",
       });
     } catch (error) {
       console.error("Error deleting branch: ", error);
       toast({
-        title: "Error",
-        description: "Failed to delete branch.",
+        title: "Gagal",
+        description: "Gagal menghapus cabang.",
         variant: "destructive",
       });
     }
   };
 
   return (
-    <Card className="bg-black/20 backdrop-blur-lg border border-white/10 text-white">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-2xl font-bold">Branches</CardTitle>
-        <CardDescription className="text-slate-300">Manage your company branches.</CardDescription>
+    <Card>
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <CardTitle className="text-2xl font-bold">Cabang</CardTitle>
+          <CardDescription>Kelola cabang perusahaan Anda.</CardDescription>
+        </div>
         {role === 'admin' && (
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-indigo-600 hover:bg-indigo-500 text-white">Add New Branch</Button>
+              <Button className="w-full sm:w-auto">Tambah Cabang Baru</Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px] bg-black/20 backdrop-blur-lg border border-white/10 text-white">
+            <DialogContent className="sm:max-w-[425px] text-black">
               <DialogHeader>
-                <DialogTitle className="text-white">Add New Branch</DialogTitle>
-                <DialogDescription className="text-slate-300">
-                  Fill in the details for the new branch.
+                <DialogTitle className="text-black">Tambah Cabang Baru</DialogTitle>
+                <DialogDescription className="text-black">
+                  Isi detail untuk cabang baru.
                 </DialogDescription>
               </DialogHeader>
               <AddBranchForm setDialogOpen={setIsAddDialogOpen} />
@@ -101,21 +103,21 @@ const Branches = () => {
       <CardContent>
         <Table>
           <TableHeader>
-            <TableRow className="hover:bg-white/10">
-              <TableHead className="text-slate-200">Name</TableHead>
-              <TableHead className="text-slate-200">Location</TableHead>
-              <TableHead className="text-slate-200">Address</TableHead>
-              <TableHead className="text-slate-200">Phone</TableHead>
-              {role === 'admin' && <TableHead className="text-slate-200 text-right">Actions</TableHead>}
+            <TableRow>
+              <TableHead>Nama</TableHead>
+              <TableHead>Lokasi</TableHead>
+              <TableHead>Alamat</TableHead>
+              <TableHead>Telepon</TableHead>
+              {role === 'admin' && <TableHead className="text-right">Aksi</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {branches.map((branch) => (
-              <TableRow key={branch.id} className="hover:bg-white/10">
-                <TableCell className="font-medium text-white">{branch.name}</TableCell>
-                <TableCell className="text-slate-200">{branch.location}</TableCell>
-                <TableCell className="text-slate-200">{branch.address || "-"}</TableCell>
-                <TableCell className="text-slate-200">{branch.phone || "-"}</TableCell>
+              <TableRow key={branch.id}>
+                <TableCell className="font-medium">{branch.name}</TableCell>
+                <TableCell>{branch.location}</TableCell>
+                <TableCell>{branch.address || "-"}</TableCell>
+                <TableCell>{branch.phone || "-"}</TableCell>
                 {role === 'admin' && (
                   <TableCell className="text-right">
                     <div className="flex justify-end space-x-2">
@@ -123,25 +125,24 @@ const Branches = () => {
                         variant="outline"
                         size="sm"
                         onClick={() => handleEditClick(branch)}
-                        className="bg-transparent border-white/20 text-white hover:bg-white/10"
                       >
                         Edit
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="destructive" size="sm">Delete</Button>
+                          <Button variant="destructive" size="sm">Hapus</Button>
                         </AlertDialogTrigger>
-                        <AlertDialogContent className="bg-black/20 backdrop-blur-lg border border-white/10 text-white">
+                        <AlertDialogContent className="text-black">
                           <AlertDialogHeader>
-                            <AlertDialogTitle className="text-white">Are you absolutely sure?</AlertDialogTitle>
-                            <AlertDialogDescription className="text-slate-300">
-                              This action cannot be undone. This will permanently delete the branch
-                              and remove its data from our servers.
+                            <AlertDialogTitle className="text-black">Apakah Anda yakin?</AlertDialogTitle>
+                            <AlertDialogDescription className="text-black">
+                              Tindakan ini tidak dapat dibatalkan. Cabang ini akan dihapus secara
+                              permanen beserta datanya dari server kami.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
-                            <AlertDialogCancel className="bg-transparent border-white/20 text-white hover:bg-white/10">Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleDeleteBranch(branch.id)} className="bg-red-600 hover:bg-red-500 text-white">Continue</AlertDialogAction>
+                            <AlertDialogCancel className="text-black">Batal</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDeleteBranch(branch.id)} className="bg-red-600 hover:bg-red-500 text-white">Lanjutkan</AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
@@ -155,11 +156,11 @@ const Branches = () => {
 
         {selectedBranch && (
           <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-            <DialogContent className="sm:max-w-[425px] bg-black/20 backdrop-blur-lg border border-white/10 text-white">
+            <DialogContent className="sm:max-w-[425px] text-black">
               <DialogHeader>
-                <DialogTitle className="text-white">Edit Branch</DialogTitle>
-                <DialogDescription className="text-slate-300">
-                  Update the details for this branch.
+                <DialogTitle className="text-black">Edit Cabang</DialogTitle>
+                <DialogDescription className="text-black">
+                  Perbarui detail untuk cabang ini.
                 </DialogDescription>
               </DialogHeader>
               <EditBranchForm setDialogOpen={setIsEditDialogOpen} branch={selectedBranch} />

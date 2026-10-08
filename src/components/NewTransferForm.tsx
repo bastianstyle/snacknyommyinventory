@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -26,33 +27,69 @@ import { Item } from "@/pages/Items";
 import { InventoryDoc } from "@/pages/Inventory";
 
 const formSchema = z.object({
-  fromBranchId: z.string().min(1, { message: "Please select a source branch." }),
-  toBranchId: z.string().min(1, { message: "Please select a destination branch." }),
-  itemId: z.string().min(1, { message: "Please select an item." }),
-  quantity: z.coerce.number().int().positive({ message: "Quantity must be a positive integer." }),
-}).refine(data => data.fromBranchId !== data.toBranchId, {
-  message: "Source and destination branches cannot be the same.",
-  path: ["toBranchId"],
+  fromBranchId: z.string().min(1, { message: "Pilih cabang asal terlebih dahulu." }),
+  toBranchId: z.string().min(1, { message: "Pilih cabang tujuan terlebih dahulu." }),
+  itemId: z.string().min(1, { message: "Pilih barang yang akan ditransfer." }),
+  quantity: z.coerce.number().int().positive({ message: "Jumlah harus berupa angka positif." }),
+}).superRefine((data, ctx) => {
+  if (data.fromBranchId && data.toBranchId && data.fromBranchId === data.toBranchId) {
+    const message = "Cabang asal dan cabang tujuan tidak boleh sama.";
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: ["fromBranchId"] });
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: ["toBranchId"] });
+  }
 });
 
 interface NewTransferFormProps {
   setDialogOpen: (open: boolean) => void;
   branches: Branch[];
   items: Item[];
+  initialValues?: {
+    toBranchId?: string;
+    itemId?: string;
+    fromBranchId?: string;
+  };
+  /**
+   * Kalau diisi, field "Cabang Tujuan" dikunci ke cabang ini dan tidak bisa diubah.
+   * Sesuai firestore.rules (transfers.create hanya boleh oleh manajer cabang tujuan),
+   * seorang Manager hanya boleh mengajukan permintaan transfer UNTUK cabangnya sendiri —
+   * jadi manajer Bandung tidak mungkin membuat permintaan dengan cabang tujuan Pontianak.
+   */
+  lockedToBranchId?: string;
 }
 
-export const NewTransferForm = ({ setDialogOpen, branches, items }: NewTransferFormProps) => {
+export const NewTransferForm = ({ setDialogOpen, branches, items, initialValues, lockedToBranchId }: NewTransferFormProps) => {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      fromBranchId: "",
-      toBranchId: "",
-      itemId: "",
+      fromBranchId: initialValues?.fromBranchId || "",
+      toBranchId: lockedToBranchId || initialValues?.toBranchId || "",
+      itemId: initialValues?.itemId || "",
       quantity: 1,
     },
   });
 
+  const watchedFromBranch = form.watch("fromBranchId");
+  const watchedToBranch = form.watch("toBranchId");
+
+  useEffect(() => {
+    if (initialValues || lockedToBranchId) {
+      form.reset({
+        fromBranchId: initialValues?.fromBranchId || "",
+        toBranchId: lockedToBranchId || initialValues?.toBranchId || "",
+        itemId: initialValues?.itemId || "",
+        quantity: 1,
+      });
+    }
+  }, [initialValues, lockedToBranchId, form.reset]);
+
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    if (values.fromBranchId === values.toBranchId) {
+      toast.error("Transfer Tidak Valid", {
+        description: "Cabang asal dan cabang tujuan tidak boleh sama.",
+      });
+      return;
+    }
+
     try {
       // Fetch source inventory to check stock and get average price
       const inventoryId = `${values.fromBranchId}_${values.itemId}`;
@@ -60,7 +97,7 @@ export const NewTransferForm = ({ setDialogOpen, branches, items }: NewTransferF
       const inventorySnap = await getDoc(inventoryRef);
 
       if (!inventorySnap.exists()) {
-        toast.error("Item does not exist in the source branch's inventory.");
+        toast.error("Barang ini tidak terdaftar di inventaris cabang asal.");
         return;
       }
 
@@ -70,7 +107,7 @@ export const NewTransferForm = ({ setDialogOpen, branches, items }: NewTransferF
       const totalValueInStock = entries.reduce((sum, entry) => sum + entry.totalValue, 0);
 
       if (totalQuantity < values.quantity) {
-        toast.error(`Insufficient stock. Only ${totalQuantity} available in source branch.`);
+        toast.error(`Stok tidak mencukupi. Tersedia ${totalQuantity} di cabang asal.`);
         return;
       }
 
@@ -83,11 +120,11 @@ export const NewTransferForm = ({ setDialogOpen, branches, items }: NewTransferF
         createdAt: serverTimestamp(),
         totalValue: transferTotalValue,
       });
-      toast.success("Transfer request created successfully.");
+      toast.success("Permintaan transfer berhasil dibuat.");
       setDialogOpen(false);
     } catch (error) {
       console.error("Error creating transfer: ", error);
-      toast.error("Failed to create transfer request.");
+      toast.error("Gagal membuat permintaan transfer.");
     }
   };
 
@@ -99,12 +136,12 @@ export const NewTransferForm = ({ setDialogOpen, branches, items }: NewTransferF
           name="fromBranchId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">From Branch</FormLabel>
+              <FormLabel>Cabang Asal</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl><SelectTrigger className="bg-black/30 border-white/20 text-white"><SelectValue placeholder="Select source branch" /></SelectTrigger></FormControl>
-                <SelectContent className="bg-black border-white/20 text-foreground">
+                <FormControl><SelectTrigger><SelectValue placeholder="Pilih cabang asal" /></SelectTrigger></FormControl>
+                <SelectContent>
                   {branches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.id} className="hover:bg-white/10 focus:bg-white/10 text-slate-50">
+                    <SelectItem key={branch.id} value={branch.id} disabled={branch.id === watchedToBranch}>
                       {branch.name}
                     </SelectItem>
                   ))}
@@ -119,17 +156,22 @@ export const NewTransferForm = ({ setDialogOpen, branches, items }: NewTransferF
           name="toBranchId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">To Branch</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl><SelectTrigger className="bg-black/30 border-white/20 text-white"><SelectValue placeholder="Select destination branch" /></SelectTrigger></FormControl>
-                <SelectContent className="bg-black border-white/20 text-foreground">
+              <FormLabel>Cabang Tujuan</FormLabel>
+              <Select onValueChange={field.onChange} value={field.value} disabled={!!lockedToBranchId}>
+                <FormControl><SelectTrigger><SelectValue placeholder="Pilih cabang tujuan" /></SelectTrigger></FormControl>
+                <SelectContent>
                   {branches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.id} className="hover:bg-white/10 focus:bg-white/10 text-slate-50">
+                    <SelectItem key={branch.id} value={branch.id} disabled={branch.id === watchedFromBranch}>
                       {branch.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {lockedToBranchId && (
+                <p className="text-xs text-muted-foreground">
+                  Anda hanya dapat mengajukan permintaan transfer untuk cabang Anda sendiri.
+                </p>
+              )}
               <FormMessage />
             </FormItem>
           )}
@@ -139,12 +181,12 @@ export const NewTransferForm = ({ setDialogOpen, branches, items }: NewTransferF
           name="itemId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Item</FormLabel>
+              <FormLabel>Barang</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl><SelectTrigger className="bg-black/30 border-white/20 text-white"><SelectValue placeholder="Select item to transfer" /></SelectTrigger></FormControl>
-                <SelectContent className="bg-black border-white/20 text-foreground">
+                <FormControl><SelectTrigger><SelectValue placeholder="Pilih barang yang akan ditransfer" /></SelectTrigger></FormControl>
+                <SelectContent>
                   {items.map((item) => (
-                    <SelectItem key={item.id} value={item.id} className="hover:bg-white/10 focus:bg-white/10 text-slate-50">
+                    <SelectItem key={item.id} value={item.id}>
                       {item.name} ({item.sku})
                     </SelectItem>
                   ))}
@@ -159,13 +201,13 @@ export const NewTransferForm = ({ setDialogOpen, branches, items }: NewTransferF
           name="quantity"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Quantity</FormLabel>
-              <FormControl><Input type="number" placeholder="Enter quantity" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" /></FormControl>
+              <FormLabel>Jumlah</FormLabel>
+              <FormControl><Input type="number" placeholder="Masukkan jumlah" {...field} /></FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white">Submit Transfer Request</Button>
+        <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white">Ajukan Permintaan Transfer</Button>
       </form>
     </Form>
   );

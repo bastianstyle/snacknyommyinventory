@@ -28,21 +28,25 @@ import { initializeApp, deleteApp } from "firebase/app"; // Import baru
 import { firebaseConfig } from "@/lib/firebase"; // Import baru
 
 const formSchema = z.object({
-  email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters." }),
-  role: z.enum(["admin", "manager"], { required_error: "Please select a role." }),
+  email: z.string().email({ message: "Alamat email tidak valid." }),
+  password: z.string().min(6, { message: "Password minimal 6 karakter." }),
+  role: z.enum(["admin", "manager"], { required_error: "Pilih peran terlebih dahulu." }),
   branchId: z.string().optional(),
 }).refine(data => data.role !== 'manager' || (data.role === 'manager' && !!data.branchId), {
-  message: "A branch must be selected for managers.",
+  message: "Cabang wajib dipilih untuk manajer.",
   path: ["branchId"],
 });
 
 interface AddUserFormProps {
   setDialogOpen: (open: boolean) => void;
   branches: Branch[];
+  existingUsers?: { email: string }[];
 }
 
-export const AddUserForm = ({ setDialogOpen, branches }: AddUserFormProps) => {
+// Trim + lowercase agar perbandingan email tidak lolos hanya karena beda kapitalisasi/spasi.
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+export const AddUserForm = ({ setDialogOpen, branches, existingUsers = [] }: AddUserFormProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -57,6 +61,20 @@ export const AddUserForm = ({ setDialogOpen, branches }: AddUserFormProps) => {
   const selectedRole = form.watch("role");
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    const isDuplicate = existingUsers.some(
+      (user) => normalizeEmail(user.email) === normalizeEmail(values.email)
+    );
+    if (isDuplicate) {
+      form.setError("email", {
+        type: "manual",
+        message: "Pengguna dengan email ini sudah terdaftar.",
+      });
+      toast.error("Pengguna Duplikat", {
+        description: `Email "${values.email}" sudah digunakan oleh akun lain.`,
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     const tempAppName = `user-creation-${Date.now()}`;
     const tempApp = initializeApp(firebaseConfig, tempAppName);
@@ -72,15 +90,15 @@ export const AddUserForm = ({ setDialogOpen, branches }: AddUserFormProps) => {
         branchId: values.role === 'manager' ? values.branchId : null,
       });
 
-      toast.success("User created successfully.");
+      toast.success("Pengguna berhasil dibuat.");
       setDialogOpen(false);
     } catch (error: any) {
       console.error("Error creating user: ", error);
-      let errorMessage = "Failed to create user.";
+      let errorMessage = "Gagal membuat pengguna.";
       if (error.code === 'auth/email-already-in-use') {
-        errorMessage = "This email address is already in use.";
+        errorMessage = "Alamat email ini sudah digunakan.";
       } else if (error.code === 'auth/weak-password') {
-        errorMessage = "The password is too weak.";
+        errorMessage = "Password terlalu lemah.";
       }
       toast.error(errorMessage);
     } finally {
@@ -97,8 +115,8 @@ export const AddUserForm = ({ setDialogOpen, branches }: AddUserFormProps) => {
           name="email"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Email</FormLabel>
-              <FormControl><Input type="email" placeholder="user@example.com" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" /></FormControl>
+              <FormLabel className="text-black">Email</FormLabel>
+              <FormControl><Input type="email" placeholder="pengguna@contoh.com" {...field} className="text-black placeholder:text-black" /></FormControl>
               <FormMessage />
             </FormItem>
           )}
@@ -108,8 +126,8 @@ export const AddUserForm = ({ setDialogOpen, branches }: AddUserFormProps) => {
           name="password"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Password</FormLabel>
-              <FormControl><Input type="password" placeholder="••••••" {...field} className="bg-black/30 border-white/20 text-white placeholder:text-slate-400" /></FormControl>
+              <FormLabel className="text-black">Password</FormLabel>
+              <FormControl><Input type="password" placeholder="••••••" {...field} className="text-black placeholder:text-black" /></FormControl>
               <FormMessage />
             </FormItem>
           )}
@@ -119,12 +137,12 @@ export const AddUserForm = ({ setDialogOpen, branches }: AddUserFormProps) => {
           name="role"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Role</FormLabel>
+              <FormLabel className="text-black">Peran</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl><SelectTrigger className="bg-black/30 border-white/20 text-white"><SelectValue placeholder="Select a role" /></SelectTrigger></FormControl>
-                <SelectContent className="bg-black border-white/20 text-foreground">
-                  <SelectItem value="admin" className="hover:bg-white/10 focus:bg-white/10 text-slate-50">Admin</SelectItem>
-                  <SelectItem value="manager" className="hover:bg-white/10 focus:bg-white/10 text-slate-50">Manager</SelectItem>
+                <FormControl><SelectTrigger className="text-black"><SelectValue placeholder="Pilih peran" className="text-black" /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectItem value="admin" className="text-black">Admin</SelectItem>
+                  <SelectItem value="manager" className="text-black">Manager</SelectItem>
                 </SelectContent>
               </Select>
               <FormMessage />
@@ -137,12 +155,12 @@ export const AddUserForm = ({ setDialogOpen, branches }: AddUserFormProps) => {
             name="branchId"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-slate-200">Branch</FormLabel>
+                <FormLabel className="text-black">Cabang</FormLabel>
                 <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl><SelectTrigger className="bg-black/30 border-white/20 text-white"><SelectValue placeholder="Select a branch" /></SelectTrigger></FormControl>
-                  <SelectContent className="bg-black border-white/20 text-foreground">
+                  <FormControl><SelectTrigger className="text-black"><SelectValue placeholder="Pilih cabang" className="text-black" /></SelectTrigger></FormControl>
+                  <SelectContent>
                     {branches.map((branch) => (
-                      <SelectItem key={branch.id} value={branch.id} className="hover:bg-white/10 focus:bg-white/10 text-slate-50">
+                      <SelectItem key={branch.id} value={branch.id} className="text-black">
                         {branch.name}
                       </SelectItem>
                     ))}
@@ -153,7 +171,7 @@ export const AddUserForm = ({ setDialogOpen, branches }: AddUserFormProps) => {
             )}
           />
         )}
-        <Button type="submit" disabled={isSubmitting} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white">{isSubmitting ? "Creating..." : "Create User"}</Button>
+        <Button type="submit" disabled={isSubmitting} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white">{isSubmitting ? "Membuat..." : "Buat Pengguna"}</Button>
       </form>
     </Form>
   );

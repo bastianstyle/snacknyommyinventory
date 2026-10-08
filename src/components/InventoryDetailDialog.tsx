@@ -47,10 +47,10 @@ export const InventoryDetailDialog = ({ isOpen, onClose, inventoryItem }: Invent
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-2xl bg-black/20 backdrop-blur-lg border border-white/10 text-white inventory-detail-dialog print-dialog-content">
+      <DialogContent className="sm:max-w-2xl inventory-detail-dialog print-dialog-content text-black">
         <DialogHeader>
-          <DialogTitle className="text-white">Stock Details for {inventoryItem.itemName}</DialogTitle>
-          <DialogDescription className="text-slate-300">
+          <DialogTitle className="text-black">Stock Details for {inventoryItem.itemName}</DialogTitle>
+          <DialogDescription className="text-black">
             Showing all stock entries for this item at {inventoryItem.branchName}.
           </DialogDescription>
         </DialogHeader>

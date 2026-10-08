@@ -25,10 +25,10 @@ import { Branch } from "@/pages/Branches";
 import { useState } from "react";
 
 const formSchema = z.object({
-  role: z.enum(["admin", "manager"], { required_error: "Please select a role." }),
+  role: z.enum(["admin", "manager"], { required_error: "Pilih peran terlebih dahulu." }),
   branchId: z.string().optional(),
 }).refine(data => data.role !== 'manager' || (data.role === 'manager' && !!data.branchId), {
-  message: "A branch must be selected for managers.",
+  message: "Cabang wajib dipilih untuk manajer.",
   path: ["branchId"],
 });
 
@@ -58,11 +58,11 @@ export const EditUserForm = ({ setDialogOpen, user, branches }: EditUserFormProp
         role: values.role,
         branchId: values.role === 'manager' ? values.branchId : null,
       });
-      toast.success("User updated successfully.");
+      toast.success("Pengguna berhasil diperbarui.");
       setDialogOpen(false);
     } catch (error) {
       console.error("Error updating user: ", error);
-      toast.error("Failed to update user.");
+      toast.error("Gagal memperbarui pengguna.");
     } finally {
       setIsSubmitting(false);
     }
@@ -71,18 +71,18 @@ export const EditUserForm = ({ setDialogOpen, user, branches }: EditUserFormProp
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <p className="text-sm font-medium text-slate-200">Editing user: <span className="font-normal text-slate-400">{user.email}</span></p>
+        <p className="text-sm font-medium text-black">Mengedit pengguna: <span className="font-normal text-black">{user.email}</span></p>
         <FormField
           control={form.control}
           name="role"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-slate-200">Role</FormLabel>
+              <FormLabel className="text-black">Peran</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl><SelectTrigger className="bg-black/30 border-white/20 text-white"><SelectValue placeholder="Select a role" /></SelectTrigger></FormControl>
-                <SelectContent className="bg-black border-white/20 text-foreground">
-                  <SelectItem value="admin" className="hover:bg-white/10 focus:bg-white/10 text-slate-50">Admin</SelectItem>
-                  <SelectItem value="manager" className="hover:bg-white/10 focus:bg-white/10 text-slate-50">Manager</SelectItem>
+                <FormControl><SelectTrigger className="text-black"><SelectValue placeholder="Pilih peran" className="text-black" /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectItem value="admin" className="text-black">Admin</SelectItem>
+                  <SelectItem value="manager" className="text-black">Manager</SelectItem>
                 </SelectContent>
               </Select>
               <FormMessage />
@@ -95,12 +95,12 @@ export const EditUserForm = ({ setDialogOpen, user, branches }: EditUserFormProp
             name="branchId"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-slate-200">Branch</FormLabel>
+                <FormLabel className="text-black">Cabang</FormLabel>
                 <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl><SelectTrigger className="bg-black/30 border-white/20 text-white"><SelectValue placeholder="Select a branch" /></SelectTrigger></FormControl>
-                  <SelectContent className="bg-black border-white/20 text-foreground">
+                  <FormControl><SelectTrigger className="text-black"><SelectValue placeholder="Pilih cabang" className="text-black" /></SelectTrigger></FormControl>
+                  <SelectContent>
                     {branches.map((branch) => (
-                      <SelectItem key={branch.id} value={branch.id} className="hover:bg-white/10 focus:bg-white/10 text-slate-50">
+                      <SelectItem key={branch.id} value={branch.id} className="text-black">
                         {branch.name}
                       </SelectItem>
                     ))}
@@ -111,7 +111,7 @@ export const EditUserForm = ({ setDialogOpen, user, branches }: EditUserFormProp
             )}
           />
         )}
-        <Button type="submit" disabled={isSubmitting} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white">{isSubmitting ? "Saving..." : "Save Changes"}</Button>
+        <Button type="submit" disabled={isSubmitting} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white">{isSubmitting ? "Menyimpan..." : "Simpan Perubahan"}</Button>
       </form>
     </Form>
   );

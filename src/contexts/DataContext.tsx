@@ -24,15 +24,22 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   const [error, setError] = useState<Error | null>(null);
   const { user } = useAuth();
 
+  const [branchesLoaded, setBranchesLoaded] = useState(false);
+  const [itemsLoaded, setItemsLoaded] = useState(false);
+
   useEffect(() => {
     if (!user) {
       setBranches([]);
       setItems([]);
       setLoading(false);
+      setBranchesLoaded(false);
+      setItemsLoaded(false);
       return;
     }
 
     setLoading(true);
+    setBranchesLoaded(false);
+    setItemsLoaded(false);
     console.log("Setting up real-time data listeners...");
 
     // Listen to branches
@@ -41,7 +48,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       (snapshot) => {
         const fetchedBranches = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Branch[];
         setBranches(fetchedBranches);
-        if (loading) setLoading(false);
+        setBranchesLoaded(true);
       },
       (err) => {
         console.error("Failed to fetch branches:", err);
@@ -56,7 +63,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       (snapshot) => {
         const fetchedItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Item[];
         setItems(fetchedItems);
-        if (loading) setLoading(false);
+        setItemsLoaded(true);
       },
       (err) => {
         console.error("Failed to fetch items:", err);
@@ -70,6 +77,12 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       unsubscribeItems();
     };
   }, [user]);
+
+  useEffect(() => {
+    if (branchesLoaded && itemsLoaded) {
+      setLoading(false);
+    }
+  }, [branchesLoaded, itemsLoaded]);
 
   const branchesMap = useMemo(() => new Map(branches.map(b => [b.id, b.name])), [branches]);
   const itemsMap = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);

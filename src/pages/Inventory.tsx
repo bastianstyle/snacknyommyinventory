@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, doc, getDoc, deleteDoc, query, orderBy, limit, startAfter, DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, doc, getDoc, deleteDoc, query, orderBy, limit, startAfter, where, DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
 import { toast } from "sonner";
 import { PlusCircle, Eye, Trash2, Printer } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -76,8 +76,7 @@ const Inventory = () => {
   const [inventory, setInventory] = useState<InventoryDoc[]>([]);
   const { branches, items, loading: dataLoading } = useData();
   const [loading, setLoading] = useState(true);
-  const { role, user } = useAuth();
-  const [userBranchId, setUserBranchId] = useState<string | null>(null);
+  const { role, user, userBranchId } = useAuth();
   
   // State for dialogs
   const [isAddInventoryOpen, setIsAddInventoryOpen] = useState(false); // State for the new form
@@ -95,41 +94,35 @@ const Inventory = () => {
 
   useEffect(() => {
     document.title = "Snack Nyommy - Inventory System - Inventory Management";
-    if (user && role === 'manager') {
-      const fetchUserBranch = async () => {
-        const userDocSnap = await getDoc(doc(db, "users", user.uid));
-        if (userDocSnap.exists()) {
-          setUserBranchId(userDocSnap.data().branchId || null);
-        }
-      }
-      fetchUserBranch();
-    }
-  }, [user, role]);
+  }, []);
 
   useEffect(() => {
-    if (dataLoading) {
+    if (dataLoading || (role === 'manager' && !userBranchId)) {
       setLoading(true);
       return;
     }
 
     setLoading(true);
-    let inventoryQuery = query(
-      collection(db, "inventory"),
-      orderBy("branchId"),
-      orderBy("itemId"),
-      limit(ITEMS_PER_PAGE)
-    );
-
+    
+    // Build query based on role
+    let constraints: any[] = [];
+    if (role === 'manager' && userBranchId) {
+      constraints.push(where("branchId", "==", userBranchId));
+    } else {
+      constraints.push(orderBy("branchId"));
+    }
+    
+    // We only use one orderBy to avoid requiring a composite index
+    // if we add itemId here, Firestore will require a composite index (branchId + itemId)
+    
     const currentCursor = pageCursorsRef.current[currentPage - 1];
     if (currentCursor) {
-      inventoryQuery = query(
-        collection(db, "inventory"),
-        orderBy("branchId"),
-        orderBy("itemId"),
-        startAfter(currentCursor),
-        limit(ITEMS_PER_PAGE)
-      );
+      constraints.push(startAfter(currentCursor));
     }
+    
+    constraints.push(limit(ITEMS_PER_PAGE));
+
+    const inventoryQuery = query(collection(db, "inventory"), ...constraints);
 
     const unsubscribe = onSnapshot(inventoryQuery, (snapshot) => {
       const inventoryData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as InventoryDoc[];
@@ -149,12 +142,12 @@ const Inventory = () => {
       }
     }, (error) => {
       console.error("Error fetching inventory:", error);
-      toast.error("Failed to fetch inventory data.");
+      toast.error("Gagal memuat data inventaris. Pastikan index sudah dibuat jika diperlukan.");
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [currentPage, dataLoading]);
+  }, [currentPage, dataLoading, role, userBranchId]);
 
   const processedInventory: ProcessedInventory[] = useMemo(() => {
     const itemsMap = new Map(items.map(item => [item.id, item]));
@@ -235,17 +228,17 @@ const Inventory = () => {
     <>
       <Card id="inventory-table-card">
         <CardHeader className="no-print">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle>Manajemen Inventaris</CardTitle>
               <CardDescription>Lihat dan kelola tingkat stok di seluruh cabang.</CardDescription>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button onClick={handlePrintAll} variant="outline">
                 <Printer className="h-4 w-4 mr-2" />
                 Cetak Semua
               </Button>
-              {role === 'admin' && (
+              {role === 'manager' && (
                 <Dialog open={isAddInventoryOpen} onOpenChange={setIsAddInventoryOpen}>
                   <DialogTrigger asChild>
                     <Button>
@@ -253,17 +246,17 @@ const Inventory = () => {
                       Tambah Stok Awal
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="sm:max-w-[425px] bg-black/20 backdrop-blur-lg border border-white/10 text-white">
+                  <DialogContent className="sm:max-w-[425px] text-black">
                     <DialogHeader>
-                      <DialogTitle className="text-white">Tambah Stok Awal</DialogTitle>
-                      <DialogDescription className="text-slate-300">
+                      <DialogTitle className="text-black">Tambah Stok Awal</DialogTitle>
+                      <DialogDescription className="text-black">
                         Buat catatan inventaris pertama untuk suatu item di cabang tertentu.
                       </DialogDescription>
                     </DialogHeader>
-                    <AddInventoryForm 
-                      setDialogOpen={setIsAddInventoryOpen} 
-                      branches={branches} 
-                      items={items} 
+                    <AddInventoryForm
+                      setDialogOpen={setIsAddInventoryOpen}
+                      branches={userBranchId ? branches.filter(b => b.id === userBranchId) : branches}
+                      items={items}
                     />
                   </DialogContent>
                 </Dialog>
@@ -297,21 +290,21 @@ const Inventory = () => {
                   </TableCell><TableCell className="text-right">
                     {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(inv.totalValue)}
                   </TableCell><TableCell className="text-right no-print">
-                    {(role === 'admin' || (role === 'manager' && inv.branchId === userBranchId)) && (
-                      <div className="flex justify-end items-center space-x-1">
+                    <div className="flex justify-end items-center space-x-1">
+                      {role === 'manager' && inv.branchId === userBranchId && (
                         <Button variant="outline" size="sm" onClick={() => handleAddStockClick(inv)}>
                           <PlusCircle className="h-4 w-4 mr-1" /> Tambah
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => handleViewDetailsClick(inv)}>
-                          <Eye className="h-4 w-4 mr-1" /> Lihat
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => handleViewDetailsClick(inv)}>
+                        <Eye className="h-4 w-4 mr-1" /> Lihat
+                      </Button>
+                      {role === 'admin' && (
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(inv.id)}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
-                        {role === 'admin' && (
-                          <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(inv.id)}>
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        )}
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </TableCell></TableRow>
                 ))
               ) : (
@@ -335,10 +328,10 @@ const Inventory = () => {
 
       {/* Add Stock Dialog */}
       <Dialog open={isAddStockOpen} onOpenChange={setIsAddStockOpen}>
-        <DialogContent className="sm:max-w-[425px] bg-black/20 backdrop-blur-lg border border-white/10 text-white">
+        <DialogContent className="sm:max-w-[425px] text-black">
           <DialogHeader>
-            <DialogTitle className="text-white">Tambah Stok untuk {selectedInventory?.itemName}</DialogTitle>
-            <DialogDescription className="text-slate-300">
+            <DialogTitle className="text-black">Tambah Stok untuk {selectedInventory?.itemName}</DialogTitle>
+            <DialogDescription className="text-black">
               Masukkan detail stok baru untuk item ini di {selectedInventory?.branchName}.
             </DialogDescription>
           </DialogHeader>
@@ -355,15 +348,15 @@ const Inventory = () => {
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
-        <AlertDialogContent className="bg-black/20 backdrop-blur-lg border border-white/10 text-white">
+        <AlertDialogContent className="text-black">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-white">Apakah Anda benar-benar yakin?</AlertDialogTitle>
-            <AlertDialogDescription className="text-slate-300">
+            <AlertDialogTitle className="text-black">Apakah Anda benar-benar yakin?</AlertDialogTitle>
+            <AlertDialogDescription className="text-black">
               Tindakan ini tidak dapat dibatalkan. Ini akan menghapus secara permanen seluruh catatan inventaris ini dan semua entri stoknya.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="bg-transparent border-white/20 text-white hover:bg-white/10">Batal</AlertDialogCancel>
+            <AlertDialogCancel className="text-black">Batal</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteInventory} className="bg-red-600 hover:bg-red-500 text-white">Lanjutkan</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

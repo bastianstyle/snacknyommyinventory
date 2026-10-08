@@ -36,14 +36,15 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, doc, updateDoc, runTransaction, getDoc, query, orderBy, limit, startAfter, DocumentData, QueryDocumentSnapshot, deleteDoc } from "firebase/firestore";
+import { collection, onSnapshot, doc, updateDoc, runTransaction, getDoc, query, where, or, orderBy, limit, startAfter, DocumentData, QueryDocumentSnapshot, deleteDoc } from "firebase/firestore";
 import { toast } from "sonner";
 import { NewTransferForm } from "@/components/NewTransferForm";
+import { PhotoUploadProof } from "@/components/PhotoUploadProof";
 import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useData } from "@/contexts/DataContext";
-import { Trash2, Truck, Info, Eye, Printer } from "lucide-react";
+import { Trash2, Truck, Info, Eye, Printer, Copy, Check, ExternalLink } from "lucide-react";
 import { InventoryDoc, InventoryEntry } from "./Inventory";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -57,6 +58,8 @@ export interface Transfer {
   status: "pending" | "approved" | "shipped" | "completed" | "rejected";
   createdAt: any; // Firebase Timestamp
   totalValue: number;
+  proofPhotoUrl?: string; // data URI base64 (bukan Firebase Storage URL)
+  receivedBy?: string;
   shippingInfo?: {
     courierName?: string;
     trackingNumber?: string;
@@ -79,13 +82,23 @@ const Transfers = () => {
   const { role, user, userBranchId } = useAuth(); // Ambil userBranchId dari AuthContext
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [transferToDeleteId, setTransferToDeleteId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isReceiveDialogOpen, setIsReceiveDialogOpen] = useState(false);
+  const [proofPhotoUrl, setProofPhotoUrl] = useState<string | null>(null);
+
+  const handleCopyResi = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    toast.success("Nomor resi berhasil disalin!");
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   const pageCursorsRef = useRef<Array<QueryDocumentSnapshot<DocumentData> | null>>([null]);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
 
   useEffect(() => {
-    document.title = "Snack Nyommy - Inventory System - Transfer Management";
+    document.title = "Snack Nyommy - Sistem Inventaris - Manajemen Transfer";
   }, []);
 
   useEffect(() => {
@@ -96,20 +109,22 @@ const Transfers = () => {
 
     setLoading(true);
     const currentCursor = pageCursorsRef.current[currentPage - 1];
-    let transfersQuery = query(
-      collection(db, "transfers"),
-      orderBy("createdAt", "desc"),
-      limit(ITEMS_PER_PAGE)
-    );
 
-    if (currentCursor) {
-      transfersQuery = query(
-        collection(db, "transfers"),
-        orderBy("createdAt", "desc"),
-        startAfter(currentCursor),
-        limit(ITEMS_PER_PAGE)
-      );
-    }
+    // Manager hanya boleh membaca transfer yang melibatkan cabangnya sendiri
+    // (sesuai firestore.rules) - tanpa filter ini, query global akan ditolak
+    // server begitu ada transfer milik cabang lain di dalam koleksi.
+    const branchConstraint = role === 'manager' && userBranchId
+      ? [or(where("fromBranchId", "==", userBranchId), where("toBranchId", "==", userBranchId))]
+      : [];
+
+    const constraints = [
+      ...branchConstraint,
+      orderBy("createdAt", "desc"),
+      ...(currentCursor ? [startAfter(currentCursor)] : []),
+      limit(ITEMS_PER_PAGE),
+    ];
+
+    const transfersQuery = query(collection(db, "transfers"), ...constraints);
 
     const unsubscribe = onSnapshot(transfersQuery, (snapshot) => {
       const transfersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Transfer[];
@@ -129,12 +144,12 @@ const Transfers = () => {
       }
     }, (error) => {
       console.error("Error fetching transfers: ", error);
-      toast.error("Failed to fetch transfers data.");
+      toast.error("Gagal memuat data transfer.");
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [currentPage, dataLoading]);
+  }, [currentPage, dataLoading, role, userBranchId]);
 
   const processedTransfers = useMemo(() => {
     const branchesMap = new Map(branches.map(branch => [branch.id, branch.name]));
@@ -142,9 +157,9 @@ const Transfers = () => {
 
     return transfers.map(transfer => ({
       ...transfer,
-      fromBranchName: branchesMap.get(transfer.fromBranchId) || "Unknown Branch",
-      toBranchName: branchesMap.get(transfer.toBranchId) || "Unknown Branch",
-      itemName: itemsMap.get(transfer.itemId) || "Unknown Item",
+      fromBranchName: branchesMap.get(transfer.fromBranchId) || "Cabang Tidak Diketahui",
+      toBranchName: branchesMap.get(transfer.toBranchId) || "Cabang Tidak Diketahui",
+      itemName: itemsMap.get(transfer.itemId) || "Barang Tidak Diketahui",
     }));
   }, [transfers, branches, items]);
 
@@ -156,11 +171,11 @@ const Transfers = () => {
     try {
       if (actionType === "approve") {
         // Step 1: Just approve the request
-        await updateDoc(doc(db, "transfers", transferId), { 
-          status: "approved" 
+        await updateDoc(doc(db, "transfers", transferId), {
+          status: "approved"
         });
-        toast.success("Transfer request approved. Ready for shipping.");
-      } 
+        toast.success("Permintaan transfer disetujui. Siap untuk dikirim.");
+      }
       else if (actionType === "ship") {
         if (!courierName) throw new Error("Nama kurir wajib diisi.");
         
@@ -169,7 +184,7 @@ const Transfers = () => {
           const transferRef = doc(db, "transfers", transferId);
 
           const fromInventorySnap = await transaction.get(fromInventoryRef);
-          if (!fromInventorySnap.exists()) throw new Error("Source inventory not found.");
+          if (!fromInventorySnap.exists()) throw new Error("Inventaris sumber tidak ditemukan.");
 
           const fromInventoryData = fromInventorySnap.data() as InventoryDoc;
           let fromEntries = [...(fromInventoryData.entries || [])];
@@ -198,7 +213,7 @@ const Transfers = () => {
             }
           }
 
-          if (quantityToShip > 0) throw new Error("Insufficient stock to ship.");
+          if (quantityToShip > 0) throw new Error("Stok tidak mencukupi untuk dikirim.");
 
           transaction.update(fromInventoryRef, { entries: remainingEntries });
           transaction.update(transferRef, { 
@@ -211,9 +226,11 @@ const Transfers = () => {
         });
         setCourierName("");
         setTrackingNumber("");
-        toast.success("Items shipped with courier info!");
+        toast.success("Barang telah dikirim beserta info kurir!");
       }
       else if (actionType === "receive") {
+        if (!proofPhotoUrl) throw new Error("Foto bukti penerimaan wajib diunggah.");
+
         // Step 3: Add to destination and mark as completed
         await runTransaction(db, async (transaction) => {
           const toInventoryRef = doc(db, "inventory", `${toBranchId}_${itemId}`);
@@ -222,17 +239,18 @@ const Transfers = () => {
           const transferSnap = await transaction.get(transferRef);
           const toInventorySnap = await transaction.get(toInventoryRef);
           
-          if (!transferSnap.exists()) throw new Error("Transfer record not found.");
+          if (!transferSnap.exists()) throw new Error("Catatan transfer tidak ditemukan.");
           const transferData = transferSnap.data();
 
           // We need to recreate entries for the destination. 
           // For simplicity, we create one entry with the average price of the transfer
+          const branchName = processedTransfers.find(t => t.id === transferId)?.fromBranchName || "Cabang Asal";
           const newEntry: InventoryEntry = {
             quantity: quantity,
             purchasePrice: transferData.totalValue / quantity,
             totalValue: transferData.totalValue,
             purchaseDate: new Date() as any,
-            supplier: `Transfer from ${processedTransfers.find(t => t.id === transferId)?.fromBranchName}`
+            supplier: `Transfer dari ${branchName}`
           };
 
           if (toInventorySnap.exists()) {
@@ -248,20 +266,24 @@ const Transfers = () => {
             });
           }
 
-          transaction.update(transferRef, { 
+          transaction.update(transferRef, {
             status: "completed",
+            proofPhotoUrl,
+            receivedBy: user?.uid,
             "shippingInfo.deliveredAt": new Date()
           });
         });
-        toast.success("Items received! Stock added to destination branch.");
+        toast.success("Barang diterima! Stok telah ditambahkan ke cabang tujuan.");
+        setProofPhotoUrl(null);
+        setIsReceiveDialogOpen(false);
       }
       else if (actionType === "reject") {
         await updateDoc(doc(db, "transfers", transferId), { status: "rejected" });
-        toast.info("Transfer rejected.");
+        toast.info("Transfer ditolak.");
       }
     } catch (error: any) {
       console.error("Error processing transfer: ", error);
-      toast.error(error.message || "Failed to process transfer.");
+      toast.error(error.message || "Gagal memproses transfer.");
     } finally {
       setTransferToProcess(null);
       setActionType(null);
@@ -329,7 +351,7 @@ const Transfers = () => {
         <body>
           <div class="header">
             <div class="logo">SNACK NYOMMY</div>
-            <div class="title">Surat Jalan (Delivery Order)</div>
+            <div class="title">Surat Jalan</div>
           </div>
           
           <div class="info-grid">
@@ -417,38 +439,45 @@ const Transfers = () => {
     <>
       <Card>
         <CardHeader>
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <CardTitle>Transfer Management</CardTitle>
-              <CardDescription>Manage inventory transfers between branches.</CardDescription>
+              <CardTitle>Manajemen Transfer</CardTitle>
+              <CardDescription>Kelola transfer inventaris antar cabang.</CardDescription>
             </div>
-            <Dialog open={isAddTransferDialogOpen} onOpenChange={setIsAddTransferDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>New Transfer</Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px] bg-black/20 backdrop-blur-lg border border-white/10 text-white">
-                <DialogHeader>
-                  <DialogTitle className="text-white">Create New Transfer Request</DialogTitle>
-                  <DialogDescription className="text-slate-300">
-                    Fill in the details to request an item transfer.
-                  </DialogDescription>
-                </DialogHeader>
-                <NewTransferForm setDialogOpen={setIsAddTransferDialogOpen} branches={branches} items={items} />
-              </DialogContent>
-            </Dialog>
+            {role === 'manager' && (
+              <Dialog open={isAddTransferDialogOpen} onOpenChange={setIsAddTransferDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>Transfer Baru</Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[425px] text-black">
+                  <DialogHeader>
+                    <DialogTitle>Buat Permintaan Transfer Baru</DialogTitle>
+                    <DialogDescription className="text-black">
+                      Isi detail untuk meminta transfer barang.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <NewTransferForm
+                    setDialogOpen={setIsAddTransferDialogOpen}
+                    branches={branches}
+                    items={items}
+                    lockedToBranchId={role === 'manager' ? userBranchId ?? undefined : undefined}
+                  />
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>From Branch</TableHead>
-                <TableHead>To Branch</TableHead>
-                <TableHead>Item</TableHead>
-                <TableHead className="text-center">Quantity</TableHead>
-                <TableHead className="text-right">Total Value</TableHead>
+                <TableHead>Cabang Asal</TableHead>
+                <TableHead>Cabang Tujuan</TableHead>
+                <TableHead>Barang</TableHead>
+                <TableHead className="text-center">Jumlah</TableHead>
+                <TableHead className="text-right">Total Nilai</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -486,20 +515,19 @@ const Transfers = () => {
                               <Eye className="h-4 w-4 mr-1" /> Kurir
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="bg-slate-900 border-white/10 text-white">
+                          <DialogContent className="text-black">
                             <DialogHeader>
                               <div className="flex justify-between items-start">
                                 <div>
                                   <DialogTitle>Detail Riwayat Transfer</DialogTitle>
-                                  <DialogDescription className="text-slate-400">
+                                  <DialogDescription className="text-black">
                                     Informasi lengkap mengenai pemindahan stok barang.
                                   </DialogDescription>
                                 </div>
                                 {(transfer.status === 'shipped' || transfer.status === 'completed') && (
-                                  <Button 
-                                    variant="outline" 
-                                    size="sm" 
-                                    className="bg-white/10 border-white/20 hover:bg-white/20 text-white"
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
                                     onClick={() => handlePrintSuratJalan(transfer)}
                                   >
                                     <Printer className="h-4 w-4 mr-2" />
@@ -509,41 +537,76 @@ const Transfers = () => {
                               </div>
                             </DialogHeader>
                             <div className="space-y-4 py-2 text-sm">
-                              <div className="grid grid-cols-2 gap-4 p-3 bg-white/5 rounded-lg border border-white/5">
+                              <div className="grid grid-cols-2 gap-4 p-3 bg-gray-50 rounded-lg border border-gray-100">
                                 <div>
-                                  <p className="text-slate-400 text-xs uppercase font-semibold">Barang</p>
+                                  <p className="text-black text-xs uppercase font-semibold">Barang</p>
                                   <p className="font-medium">{transfer.itemName}</p>
                                 </div>
                                 <div>
-                                  <p className="text-slate-400 text-xs uppercase font-semibold">Jumlah</p>
+                                  <p className="text-black text-xs uppercase font-semibold">Jumlah</p>
                                   <p className="font-medium">{transfer.quantity} unit</p>
                                 </div>
                               </div>
 
                               <div className="space-y-3">
-                                <h4 className="font-semibold text-blue-400">Logistik & Pengiriman</h4>
-                                <div className="space-y-2 border-l-2 border-slate-700 pl-4 ml-1">
+                                <h4 className="font-semibold text-black">Logistik & Pengiriman</h4>
+                                <div className="space-y-2 border-l-2 border-gray-200 pl-4 ml-1">
                                   <div>
-                                    <p className="text-slate-400 text-xs italic">Permintaan Dibuat</p>
+                                    <p className="text-black text-xs italic">Permintaan Dibuat</p>
                                     <p>{transfer.createdAt?.toDate().toLocaleString('id-ID')}</p>
                                   </div>
                                   {transfer.shippingInfo?.shippedAt && (
                                     <div className="pt-2">
-                                      <p className="text-slate-400 text-xs italic text-blue-300">Dikirim Pada</p>
+                                      <p className="text-black text-xs italic text-black">Dikirim Pada</p>
                                       <p>{transfer.shippingInfo.shippedAt.toDate().toLocaleString('id-ID')}</p>
-                                      <div className="bg-blue-500/10 p-2 mt-1 rounded border border-blue-500/20">
-                                        <p className="text-[10px] text-blue-400 font-bold uppercase tracking-wider">Informasi Kurir</p>
-                                        <p className="text-xs">Kurir: <span className="font-semibold text-white">{transfer.shippingInfo.courierName}</span></p>
+                                      <div className="bg-blue-50 p-2 mt-1 rounded border border-blue-100">
+                                        <p className="text-[10px] text-black font-bold uppercase tracking-wider">Informasi Kurir</p>
+                                        <p className="text-xs">Kurir: <span className="font-semibold text-black">{transfer.shippingInfo.courierName}</span></p>
                                         {transfer.shippingInfo.trackingNumber && (
-                                          <p className="text-xs">Resi: <span className="font-semibold text-white">{transfer.shippingInfo.trackingNumber}</span></p>
+                                          <div className="space-y-1">
+                                            <div className="flex items-center gap-2">
+                                              <p className="text-xs">Resi: <span className="font-semibold text-black">{transfer.shippingInfo.trackingNumber}</span></p>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6 text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                                                onClick={() => handleCopyResi(transfer.shippingInfo.trackingNumber!, transfer.id)}
+                                              >
+                                                {copiedId === transfer.id ? (
+                                                  <Check className="h-3 w-3 text-black" />
+                                                ) : (
+                                                  <Copy className="h-3 w-3" />
+                                                )}
+                                              </Button>
+                                            </div>
+                                            <a
+                                              href="https://jne.co.id/"
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-[10px] text-black hover:text-black flex items-center gap-1 mt-1 underline decoration-dotted underline-offset-2"
+                                            >
+                                              <ExternalLink className="h-2 w-2" />
+                                              Cek Resi (JNE)
+                                            </a>
+                                          </div>
                                         )}
                                       </div>
                                     </div>
                                   )}
                                   {transfer.status === "completed" && transfer.shippingInfo?.deliveredAt && (
                                     <div className="pt-2">
-                                      <p className="text-slate-400 text-xs italic text-green-300">Diterima Pada</p>
+                                      <p className="text-black text-xs italic text-black">Diterima Pada</p>
                                       <p>{transfer.shippingInfo.deliveredAt.toDate().toLocaleString('id-ID')}</p>
+                                    </div>
+                                  )}
+                                  {transfer.status === "completed" && transfer.proofPhotoUrl && (
+                                    <div className="pt-2">
+                                      <p className="text-black text-xs uppercase text-black font-semibold">Bukti Penerimaan</p>
+                                      <img
+                                        src={transfer.proofPhotoUrl}
+                                        alt="Bukti penerimaan"
+                                        className="rounded-lg mt-2 max-h-48 object-cover border border-gray-200"
+                                      />
                                     </div>
                                   )}
                                 </div>
@@ -552,8 +615,8 @@ const Transfers = () => {
                           </DialogContent>
                         </Dialog>
 
-                      {/* Action: Approve / Reject (Only for Source Branch or Admin) */}
-                      {transfer.status === "pending" && (role === 'admin' || (role === 'manager' && userBranchId === transfer.fromBranchId)) && (
+                      {/* Action: Approve / Reject (Hanya Manager cabang asal - Admin murni pengawas) */}
+                      {transfer.status === "pending" && (role === 'manager' && userBranchId === transfer.fromBranchId) && (
                         <>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
@@ -562,18 +625,18 @@ const Transfers = () => {
                                 size="sm"
                                 onClick={() => { setTransferToProcess(transfer); setActionType("approve"); }}
                               >
-                                Approve
+                                Setujui
                               </Button>
                             </AlertDialogTrigger>
-                            <AlertDialogContent className="bg-black/20 backdrop-blur-lg border border-white/10 text-white">
+                            <AlertDialogContent className="text-black">
                               <AlertDialogHeader>
-                                <AlertDialogTitle className="text-white">Setujui Permintaan Transfer?</AlertDialogTitle>
-                                <AlertDialogDescription className="text-slate-300">
+                                <AlertDialogTitle>Setujui Permintaan Transfer?</AlertDialogTitle>
+                                <AlertDialogDescription className="text-black">
                                   Dengan menyetujui, Anda menyatakan stok tersedia dan siap untuk disiapkan.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel className="bg-transparent border-white/20 text-white hover:bg-white/10" onClick={() => { setTransferToProcess(null); setActionType(null); }}>Batal</AlertDialogCancel>
+                                <AlertDialogCancel onClick={() => { setTransferToProcess(null); setActionType(null); }}>Batal</AlertDialogCancel>
                                 <AlertDialogAction onClick={handleProcessTransfer}>Setujui</AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -585,18 +648,18 @@ const Transfers = () => {
                                 size="sm"
                                 onClick={() => { setTransferToProcess(transfer); setActionType("reject"); }}
                               >
-                                Reject
+                                Tolak
                               </Button>
                             </AlertDialogTrigger>
-                            <AlertDialogContent className="bg-black/20 backdrop-blur-lg border border-white/10 text-white">
+                            <AlertDialogContent className="text-black">
                               <AlertDialogHeader>
-                                <AlertDialogTitle className="text-white">Tolak Transfer?</AlertDialogTitle>
-                                <AlertDialogDescription className="text-slate-300">
+                                <AlertDialogTitle>Tolak Transfer?</AlertDialogTitle>
+                                <AlertDialogDescription className="text-black">
                                   Permintaan ini akan dibatalkan.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel className="bg-transparent border-white/20 text-white hover:bg-white/10" onClick={() => { setTransferToProcess(null); setActionType(null); }}>Batal</AlertDialogCancel>
+                                <AlertDialogCancel onClick={() => { setTransferToProcess(null); setActionType(null); }}>Batal</AlertDialogCancel>
                                 <AlertDialogAction onClick={handleProcessTransfer} className="bg-red-600 hover:bg-red-500 text-white">Tolak</AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -604,8 +667,8 @@ const Transfers = () => {
                         </>
                       )}
 
-                      {/* Action: Ship (Only for Source Branch or Admin) */}
-                      {transfer.status === "approved" && (role === 'admin' || (role === 'manager' && userBranchId === transfer.fromBranchId)) && (
+                      {/* Action: Ship (Only for Source Branch Manager) */}
+                      {transfer.status === "approved" && (role === 'manager' && userBranchId === transfer.fromBranchId) && (
                         <Dialog open={actionType === "ship" && transferToProcess?.id === transfer.id} onOpenChange={(open) => { if(!open) { setActionType(null); setTransferToProcess(null); } }}>
                           <DialogTrigger asChild>
                             <Button
@@ -615,35 +678,33 @@ const Transfers = () => {
                               onClick={() => { setTransferToProcess(transfer); setActionType("ship"); }}
                             >
                               <Truck className="h-4 w-4 mr-1" />
-                              Ship
+                              Kirim
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="bg-slate-900 border-white/10 text-white">
+                          <DialogContent className="text-black">
                             <DialogHeader>
                               <DialogTitle>Detail Pengiriman</DialogTitle>
-                              <DialogDescription className="text-slate-400">
+                              <DialogDescription className="text-black">
                                 Masukkan informasi kurir untuk pengiriman {transfer.quantity} unit {transfer.itemName}.
                               </DialogDescription>
                             </DialogHeader>
                             <div className="space-y-4 py-4">
                               <div className="space-y-2">
                                 <Label htmlFor="courier">Nama Kurir / Sopir</Label>
-                                <Input 
-                                  id="courier" 
-                                  placeholder="Contoh: JNE, Budi, atau Plat Nomor" 
+                                <Input
+                                  id="courier"
+                                  placeholder="Contoh: JNE, Budi, atau Plat Nomor"
                                   value={courierName}
                                   onChange={(e) => setCourierName(e.target.value)}
-                                  className="bg-white/5 border-white/10 text-white"
                                 />
                               </div>
                               <div className="space-y-2">
                                 <Label htmlFor="resi">Nomor Resi / Dokumen (Opsional)</Label>
-                                <Input 
-                                  id="resi" 
-                                  placeholder="Masukkan nomor pelacakan" 
+                                <Input
+                                  id="resi"
+                                  placeholder="Masukkan nomor pelacakan"
                                   value={trackingNumber}
                                   onChange={(e) => setTrackingNumber(e.target.value)}
-                                  className="bg-white/5 border-white/10 text-white"
                                 />
                               </div>
                             </div>
@@ -655,32 +716,57 @@ const Transfers = () => {
                         </Dialog>
                       )}
 
-                      {/* Action: Receive (Only for Destination Branch or Admin) */}
-                      {transfer.status === "shipped" && (role === 'admin' || (role === 'manager' && userBranchId === transfer.toBranchId)) && (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
+                      {/* Action: Receive (Only for Destination Branch Manager) */}
+                      {transfer.status === "shipped" && (role === 'manager' && userBranchId === transfer.toBranchId) && (
+                        <Dialog
+                          open={isReceiveDialogOpen && transferToProcess?.id === transfer.id}
+                          onOpenChange={(open) => {
+                            setIsReceiveDialogOpen(open);
+                            if (!open) {
+                              setTransferToProcess(null);
+                              setActionType(null);
+                              setProofPhotoUrl(null);
+                            }
+                          }}
+                        >
+                          <DialogTrigger asChild>
                             <Button
                               variant="outline"
                               size="sm"
                               className="border-green-500 text-green-500 hover:bg-green-500/10"
-                              onClick={() => { setTransferToProcess(transfer); setActionType("receive"); }}
+                              onClick={() => { setTransferToProcess(transfer); setActionType("receive"); setProofPhotoUrl(null); setIsReceiveDialogOpen(true); }}
                             >
-                              Receive Items
+                              Terima Barang
                             </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent className="bg-black/20 backdrop-blur-lg border border-white/10 text-white">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle className="text-white">Terima Barang?</AlertDialogTitle>
-                              <AlertDialogDescription className="text-slate-300">
-                                Konfirmasi bahwa {transfer.quantity} unit telah sampai di {transfer.toBranchName} dan stok akan ditambahkan.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel className="bg-transparent border-white/20 text-white hover:bg-white/10" onClick={() => { setTransferToProcess(null); setActionType(null); }}>Batal</AlertDialogCancel>
-                              <AlertDialogAction onClick={handleProcessTransfer} className="bg-green-600 hover:bg-green-500">Konfirmasi Terima</AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                          </DialogTrigger>
+                          <DialogContent className="text-black">
+                            <DialogHeader>
+                              <DialogTitle>Terima Barang</DialogTitle>
+                              <DialogDescription className="text-black">
+                                Konfirmasi bahwa {transfer.quantity} unit {transfer.itemName} telah sampai di {transfer.toBranchName}. Unggah foto bukti penerimaan sebelum konfirmasi.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <PhotoUploadProof
+                              onPhotoReady={(base64) => setProofPhotoUrl(base64)}
+                              onError={() => setProofPhotoUrl(null)}
+                            />
+                            <div className="flex justify-end gap-3">
+                              <Button
+                                variant="ghost"
+                                onClick={() => { setIsReceiveDialogOpen(false); setTransferToProcess(null); setActionType(null); setProofPhotoUrl(null); }}
+                              >
+                                Batal
+                              </Button>
+                              <Button
+                                onClick={handleProcessTransfer}
+                                disabled={!proofPhotoUrl}
+                                className="bg-green-600 hover:bg-green-500"
+                              >
+                                Konfirmasi Terima
+                              </Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
                       )}
                         {role === 'admin' && (
                           <AlertDialog>
@@ -693,16 +779,16 @@ const Transfers = () => {
                                 <Trash2 className="h-4 w-4 text-red-500" />
                               </Button>
                             </AlertDialogTrigger>
-                            <AlertDialogContent className="bg-black/20 backdrop-blur-lg border border-white/10 text-white">
+                            <AlertDialogContent className="text-black">
                               <AlertDialogHeader>
-                                <AlertDialogTitle className="text-white">Are you absolutely sure?</AlertDialogTitle>
-                                <AlertDialogDescription className="text-slate-300">
-                                  This action cannot be undone. This will permanently delete this transfer record.
+                                <AlertDialogTitle>Apakah Anda yakin?</AlertDialogTitle>
+                                <AlertDialogDescription className="text-black">
+                                  Tindakan ini tidak dapat dibatalkan. Catatan transfer ini akan dihapus secara permanen.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel className="bg-transparent border-white/20 text-white hover:bg-white/10" onClick={() => { setTransferToDeleteId(null); setIsDeleteAlertOpen(false); }}>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={handleDeleteTransfer} className="bg-red-600 hover:bg-red-500 text-white">Delete</AlertDialogAction>
+                                <AlertDialogCancel onClick={() => { setTransferToDeleteId(null); setIsDeleteAlertOpen(false); }}>Batal</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleDeleteTransfer} className="bg-red-600 hover:bg-red-500 text-white">Hapus</AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
@@ -713,7 +799,7 @@ const Transfers = () => {
                 ))
               ) : (
                 <TableRow><TableCell colSpan={7} className="text-center h-24">
-                  No transfer requests found.
+                  Belum ada permintaan transfer.
                 </TableCell></TableRow>
               )}
             </TableBody>

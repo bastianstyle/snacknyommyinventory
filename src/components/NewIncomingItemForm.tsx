@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { collection, doc, getDocs, runTransaction, serverTimestamp } from "firebase/firestore";
+import { collection, doc, getDocs, runTransaction, serverTimestamp, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useData } from "@/contexts/DataContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,10 +30,12 @@ interface InventoryOption {
   value: string;
   label: string;
   supplier: string;
+  currentStock: number;
 }
 
 export const NewIncomingItemForm = ({ onTransactionComplete }: { onTransactionComplete: () => void }) => {
   const { itemsMap, branchesMap } = useData();
+  const { role, userBranchId } = useAuth();
   const [inventoryOptions, setInventoryOptions] = useState<InventoryOption[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -53,23 +56,32 @@ export const NewIncomingItemForm = ({ onTransactionComplete }: { onTransactionCo
     const fetchInventories = async () => {
       if (itemsMap.size === 0 || branchesMap.size === 0) return;
 
-      const inventorySnapshot = await getDocs(collection(db, "inventory"));
+      let inventoryQuery = query(collection(db, "inventory"));
+      
+      // Filter untuk Manager: hanya bisa input ke cabangnya sendiri
+      if (role === 'manager' && userBranchId) {
+        inventoryQuery = query(collection(db, "inventory"), where("branchId", "==", userBranchId));
+      }
+
+      const inventorySnapshot = await getDocs(inventoryQuery);
       const options = inventorySnapshot.docs.map(docSnap => {
         const inventory = { id: docSnap.id, ...docSnap.data() } as InventoryDoc;
         const item = itemsMap.get(inventory.itemId);
         const itemName = item?.name || "Item Tidak Dikenal";
         const branchName = branchesMap.get(inventory.branchId) || "Cabang Tidak Dikenal";
         const lastSupplier = inventory.entries.length > 0 ? inventory.entries[inventory.entries.length - 1].supplier : "";
+        const currentStock = (inventory.entries || []).reduce((sum, entry) => sum + entry.quantity, 0);
         return {
           value: inventory.id,
-          label: `${itemName} - ${branchName}`,
+          label: role === 'admin' ? `${itemName} - ${branchName}` : itemName,
           supplier: lastSupplier,
+          currentStock,
         };
       });
       setInventoryOptions(options);
     };
     fetchInventories();
-  }, [itemsMap, branchesMap]);
+  }, [itemsMap, branchesMap, role, userBranchId]);
 
   const handleInventoryChange = (inventoryId: string) => {
     const selectedOption = inventoryOptions.find(opt => opt.value === inventoryId);
@@ -160,7 +172,9 @@ export const NewIncomingItemForm = ({ onTransactionComplete }: { onTransactionCo
                     </FormControl>
                     <SelectContent>
                       {inventoryOptions.map(opt => (
-                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label} (Stok: {opt.currentStock})
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { collection, onSnapshot, orderBy, query, Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, orderBy, query, Timestamp, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useData } from '@/contexts/DataContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrencyIDR, formatDateID } from '@/lib/utils';
 import { Printer } from 'lucide-react';
 
@@ -27,13 +28,24 @@ const IncomingItems = () => {
   const [incomingItems, setIncomingItems] = useState<IncomingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const { itemsMap, branchesMap } = useData();
+  const { role, userBranchId } = useAuth();
   const [selectedItem, setSelectedItem] = useState<IncomingItem | null>(null);
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   const mainPrintableAreaRef = useRef<HTMLDivElement>(null);
 
   const fetchIncomingItems = useCallback(() => {
     setLoading(true);
-    const q = query(collection(db, "incoming_items"), orderBy("createdAt", "desc"));
+    let q = query(collection(db, "incoming_items"), orderBy("createdAt", "desc"));
+    
+    // Filter untuk Manager: hanya lihat cabang sendiri
+    if (role === 'manager' && userBranchId) {
+      q = query(
+        collection(db, "incoming_items"), 
+        where("branchId", "==", userBranchId),
+        orderBy("createdAt", "desc")
+      );
+    }
+
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const itemsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as IncomingItem));
       setIncomingItems(itemsData);
@@ -43,7 +55,7 @@ const IncomingItems = () => {
       setLoading(false);
     });
     return unsubscribe;
-  }, []);
+  }, [role, userBranchId]);
 
   useEffect(() => {
     const unsubscribe = fetchIncomingItems();
@@ -78,18 +90,20 @@ const IncomingItems = () => {
     <div className="p-4 md:p-6 space-y-6">
       <div className="no-print">
         <h1 className="text-2xl md:text-3xl font-bold">Barang Masuk</h1>
-        <NewIncomingItemForm onTransactionComplete={fetchIncomingItems} />
+        {role === 'manager' && (
+          <NewIncomingItemForm onTransactionComplete={fetchIncomingItems} />
+        )}
       </div>
 
       <div className="printable-area" ref={mainPrintableAreaRef}>
         <Card>
           <CardHeader className="no-print">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <CardTitle>Riwayat Barang Masuk</CardTitle>
                 <CardDescription>Daftar semua transaksi barang yang telah dicatat.</CardDescription>
               </div>
-              <Button variant="outline" onClick={handlePrintAll}>
+              <Button variant="outline" onClick={handlePrintAll} className="w-full sm:w-auto">
                 <Printer className="mr-2 h-4 w-4" />
                 Cetak Laporan
               </Button>

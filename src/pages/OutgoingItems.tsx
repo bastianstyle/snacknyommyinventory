@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, orderBy, query, Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, orderBy, query, Timestamp, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
@@ -25,7 +25,7 @@ export interface OutgoingItemDoc {
 }
 
 const OutgoingItems = () => {
-  const { role } = useAuth();
+  const { role, userBranchId } = useAuth();
   const { branchesMap, itemsMap } = useData();
   const [outgoingItems, setOutgoingItems] = useState<OutgoingItemDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,7 +35,17 @@ const OutgoingItems = () => {
   const mainPrintableAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const q = query(collection(db, "outgoing_items"), orderBy("createdAt", "desc"));
+    let q = query(collection(db, "outgoing_items"), orderBy("createdAt", "desc"));
+
+    // Filter untuk Manager: hanya lihat cabang sendiri
+    if (role === 'manager' && userBranchId) {
+      q = query(
+        collection(db, "outgoing_items"), 
+        where("branchId", "==", userBranchId),
+        orderBy("createdAt", "desc")
+      );
+    }
+
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const itemsData = querySnapshot.docs.map(doc => ({
         id: doc.id,
@@ -49,9 +59,9 @@ const OutgoingItems = () => {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [role, userBranchId]);
 
-  const canManage = role === 'admin' || role === 'manager';
+  const canManage = role === 'manager';
 
   const handleTransactionComplete = () => {
     setIsFormOpen(false);
@@ -86,12 +96,12 @@ const OutgoingItems = () => {
       <div className="printable-area" ref={mainPrintableAreaRef}>
         <Card>
           <CardHeader>
-            <div className="flex flex-row items-center justify-between no-print">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between no-print">
               <div>
                 <CardTitle>Riwayat Barang Keluar</CardTitle>
                 <CardDescription>Daftar semua item yang telah dikeluarkan dari inventaris.</CardDescription>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {canManage && (
                   <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
                     <DialogTrigger asChild>

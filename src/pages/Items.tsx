@@ -48,7 +48,7 @@ const Items = () => {
   const [loading, setLoading] = useState(true);
   const { role } = useAuth();
   const isAdmin = role === 'admin';
-  
+
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   const [isEditFormOpen, setIsEditFormOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
@@ -56,7 +56,7 @@ const Items = () => {
   const [itemToDeleteId, setItemToDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
-    document.title = "Snack Nyommy - Inventory System - Item Master Management";
+    document.title = "Snack Nyommy - Sistem Inventaris - Manajemen Item";
     const unsubscribe = onSnapshot(collection(db, "items"), (snapshot) => {
       const itemsData = snapshot.docs.map((doc) => ({
         id: doc.id,
@@ -67,8 +67,8 @@ const Items = () => {
     }, (error) => {
       console.error("Error fetching items: ", error);
       toast({
-        title: "Error",
-        description: "Failed to fetch items data.",
+        title: "Gagal",
+        description: "Gagal memuat data item.",
         variant: "destructive",
       });
       setLoading(false);
@@ -92,14 +92,14 @@ const Items = () => {
     try {
       await deleteDoc(doc(db, "items", itemToDeleteId));
       toast({
-        title: "Success",
-        description: "Item deleted successfully.",
+        title: "Berhasil",
+        description: "Item berhasil dihapus.",
       });
     } catch (error) {
       console.error("Error deleting item: ", error);
       toast({
-        title: "Error",
-        description: "Failed to delete item.",
+        title: "Gagal",
+        description: "Gagal menghapus item.",
         variant: "destructive",
       });
     } finally {
@@ -111,15 +111,15 @@ const Items = () => {
   return (
     <Card>
       <CardHeader>
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle>Item Master Management</CardTitle>
+            <CardTitle>Manajemen Item</CardTitle>
             <CardDescription>
-              Manage your master inventory items here.
+              Kelola daftar item master inventaris di sini.
             </CardDescription>
           </div>
           {isAdmin && (
-            <Button onClick={() => setIsAddFormOpen(true)}>Add Item</Button>
+            <Button className="w-full sm:w-auto" onClick={() => setIsAddFormOpen(true)}>Tambah Item</Button>
           )}
         </div>
       </CardHeader>
@@ -127,11 +127,11 @@ const Items = () => {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Item Name</TableHead>
+              <TableHead>Nama Item</TableHead>
               <TableHead>SKU</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Unit</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>Kategori</TableHead>
+              <TableHead>Satuan</TableHead>
+              <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -156,16 +156,17 @@ const Items = () => {
               ))
             ) : (
               <TableRow><TableCell colSpan={5} className="text-center">
-                No items found. Add one to get started.
+                Belum ada item. Tambahkan satu untuk memulai.
               </TableCell></TableRow>
             )}
           </TableBody>
         </Table>
       </CardContent>
-      
+
       <AddItemForm
         isOpen={isAddFormOpen}
         onClose={() => setIsAddFormOpen(false)}
+        existingItems={items}
       />
 
       <EditItemForm
@@ -178,17 +179,17 @@ const Items = () => {
       />
 
       <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
-        <AlertDialogContent className="bg-black/20 backdrop-blur-lg border border-white/10 text-white">
+        <AlertDialogContent className="text-black">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-white">Are you absolutely sure?</AlertDialogTitle>
-            <AlertDialogDescription className="text-slate-300">
-              This action cannot be undone. This will permanently delete the item
-              from your inventory.
+            <AlertDialogTitle className="text-black">Apakah Anda yakin?</AlertDialogTitle>
+            <AlertDialogDescription className="text-black">
+              Tindakan ini tidak dapat dibatalkan. Item akan dihapus secara permanen
+              dari inventaris Anda.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="bg-transparent border-white/20 text-white hover:bg-white/10">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteItem} className="bg-red-600 hover:bg-red-500 text-white">Continue</AlertDialogAction>
+            <AlertDialogCancel className="text-black">Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteItem} className="bg-red-600 hover:bg-red-500 text-white">Lanjutkan</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

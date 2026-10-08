@@ -18,6 +18,7 @@ import Users from "./pages/Users";
 import Tutorial from "./pages/Tutorial";
 import IncomingItems from "./pages/IncomingItems"; // New import
 import OutgoingItems from "./pages/OutgoingItems"; // New import
+import CriticalStock from "./pages/CriticalStock";
 
 const queryClient = new QueryClient();
 
@@ -34,14 +35,19 @@ const App = () => (
               <Route element={<ProtectedRoute />}>
                 <Route element={<Layout />}>
                   <Route path="/" element={<Index />} />
-                  <Route path="/branches" element={<Branches />} />
                   <Route path="/items" element={<Items />} />
                   <Route path="/inventory" element={<Inventory />} />
+                  <Route path="/critical-stock" element={<CriticalStock />} />
                   <Route path="/transfers" element={<Transfers />} />
-                  <Route path="/users" element={<Users />} />
                   <Route path="/tutorial" element={<Tutorial />} />
-                  <Route path="/incoming-items" element={<IncomingItems />} /> {/* New route */}
-                  <Route path="/outgoing-items" element={<OutgoingItems />} /> {/* New route */}
+                  <Route path="/incoming-items" element={<IncomingItems />} />
+                  <Route path="/outgoing-items" element={<OutgoingItems />} />
+                  
+                  {/* Routes only for Admin */}
+                  <Route element={<ProtectedRoute requiredRole="admin" />}>
+                    <Route path="/branches" element={<Branches />} />
+                    <Route path="/users" element={<Users />} />
+                  </Route>
                 </Route>
               </Route>
               <Route path="*" element={<NotFound />} />
